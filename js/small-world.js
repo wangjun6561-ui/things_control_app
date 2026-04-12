@@ -334,11 +334,15 @@ function isItemCompleted(item) {
 }
 
 function getItemTitle(item, isPavilion) {
-  return safeText(isPavilion ? item.title : item.name);
+  return safeText(isPavilion
+    ? (item.title || item.name || item.label || item.content)
+    : (item.name || item.title || item.label || item.content));
 }
 
 function getItemDescription(item, isPavilion) {
-  return safeText(isPavilion ? item.description : item.desc);
+  return safeText(isPavilion
+    ? (item.description || item.desc || item.note)
+    : (item.desc || item.description || item.note));
 }
 
 function getItemTags(item, isPavilion) {

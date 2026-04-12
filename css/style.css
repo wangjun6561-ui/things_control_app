@@ -2058,19 +2058,35 @@ select:focus {
     padding: 12px;
   }
 
-  .hero-stats,
+  .hero-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
   .detail-summary {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .box-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
   }
 
-  .box-card.large,
+  .box-card.large {
+    grid-column: span 2;
+  }
+
   .box-card.mid,
   .box-card.small {
     grid-column: span 1;
+  }
+
+  .stat-card {
+    padding: 10px 12px;
+  }
+
+  .stat-card strong {
+    font-size: 24px;
   }
 
   .section-heading,
@@ -2088,12 +2104,15 @@ select:focus {
   }
 
   .sw-realm-portals {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .sw-floor-card,
+  .sw-floor-card {
+    grid-template-columns: 48px 1fr;
+  }
+
   .sw-item-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: 40px 1fr 88px;
   }
 
   .sw-floor-order {
@@ -2102,7 +2121,7 @@ select:focus {
   }
 
   .sw-item-side {
-    flex-direction: row;
+    flex-direction: column;
   }
 
   .extract-row {

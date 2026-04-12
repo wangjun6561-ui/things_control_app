@@ -105,7 +105,8 @@ function pickByPointer(entries, angle) {
 function truncateLabel(value, maxChars) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (text.length <= maxChars) return text;
-  return `${text.slice(0, Math.max(1, maxChars - 1))}…`;
+  if (maxChars <= 2) return text.slice(0, maxChars);
+  return `${text.slice(0, Math.max(1, maxChars - 3))}...`;
 }
 
 function splitLabel(value, charsPerLine, maxLines) {
@@ -123,6 +124,21 @@ function splitLabel(value, charsPerLine, maxLines) {
     remaining = remaining.slice(charsPerLine).trim();
   }
   return lines;
+}
+
+function compactSliceLabel(value, sweep, entryCount) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+
+  if (entryCount <= 12) return text;
+
+  const parts = text.split(/[·•|｜/:：-]/).map((part) => part.trim()).filter(Boolean);
+  const compact = parts.length > 1 ? parts[parts.length - 1] : text;
+
+  if (entryCount > 28 || sweep < 0.16) return truncateLabel(compact, 2) || truncateLabel(text, 2);
+  if (entryCount > 20 || sweep < 0.2) return truncateLabel(compact, 4) || truncateLabel(text, 4);
+  if (entryCount > 14) return truncateLabel(compact, 6) || truncateLabel(text, 6);
+  return text;
 }
 
 function renderWheelResult(root, {
@@ -146,14 +162,19 @@ function renderWheelResult(root, {
 }
 
 function drawSliceLabel(ctx, label, radius, sweep, entryCount) {
-  const minSweep = entryCount > 24 ? 0.26 : entryCount > 14 ? 0.18 : 0.12;
+  const minSweep = entryCount > 28 ? 0.1 : entryCount > 20 ? 0.12 : entryCount > 14 ? 0.15 : 0.12;
   if (sweep < minSweep) return;
 
-  const charsPerLine = sweep > 0.46 ? 8 : sweep > 0.3 ? 6 : 4;
-  const lines = splitLabel(label, charsPerLine, sweep > 0.44 ? 2 : 1);
-  const fontSize = Math.max(10, Math.min(15, 17 - entryCount / 3));
+  const displayLabel = compactSliceLabel(label, sweep, entryCount);
+  if (!displayLabel) return;
+
+  const isDenseWheel = entryCount > 20 || sweep < 0.2;
+  const charsPerLine = isDenseWheel ? (sweep > 0.22 ? 4 : 2) : (sweep > 0.46 ? 8 : sweep > 0.3 ? 6 : 4);
+  const lines = splitLabel(displayLabel, charsPerLine, isDenseWheel ? 1 : (sweep > 0.44 ? 2 : 1));
+  const fontSize = entryCount > 28 ? 8 : entryCount > 20 ? 9 : Math.max(10, Math.min(15, 17 - entryCount / 3));
   const lineHeight = fontSize + 2;
   const startY = -((lines.length - 1) * lineHeight) / 2;
+  const textRadius = isDenseWheel ? radius - 16 : radius - 22;
 
   ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
   ctx.font = `700 ${fontSize}px "Avenir Next", "PingFang SC", sans-serif`;
@@ -163,7 +184,7 @@ function drawSliceLabel(ctx, label, radius, sweep, entryCount) {
   ctx.shadowBlur = 8;
 
   lines.forEach((line, index) => {
-    ctx.fillText(line, radius - 22, startY + index * lineHeight);
+    ctx.fillText(line, textRadius, startY + index * lineHeight);
   });
 
   ctx.shadowBlur = 0;
@@ -331,6 +352,11 @@ export function openWeightedWheel({
 } = {}) {
   const weighted = entries.some((entry) => Math.max(1, Number(entry.weight) || 1) > 1);
   const theme = getTheme(color);
+  const resolveEntryText = (entry) => {
+    const primary = String(getText?.(entry) || '').trim();
+    if (primary) return primary;
+    return String(entry?.content || entry?.name || entry?.title || entry?.label || entry?.id || '未命名内容').trim();
+  };
   const { root } = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-content wheel wheel-sheet">
@@ -370,7 +396,7 @@ export function openWeightedWheel({
   let spinning = false;
   let highlightedIndex = -1;
 
-  const draw = () => drawWheel(ctx, size, entries, angle, theme, getText, highlightedIndex);
+  const draw = () => drawWheel(ctx, size, entries, angle, theme, resolveEntryText, highlightedIndex);
 
   const helpers = {
     renderResult: (options) => renderWheelResult(root, options),
@@ -434,14 +460,14 @@ export function openWeightedWheel({
         } else {
           helpers.renderResult({
             eyebrow: '抽取结果',
-            title: getText(picked),
+            title: resolveEntryText(picked),
             description: '这次的随机结果已经落定，可以直接执行它。',
           });
         }
       } catch {
         helpers.renderResult({
           eyebrow: '抽取结果',
-          title: getText(picked) || '结果加载失败',
+          title: resolveEntryText(picked) || '结果加载失败',
           description: '抽取已经完成，但结果渲染失败，请重试。',
         });
       } finally {
