@@ -2,7 +2,7 @@
   "name": "TaskBox",
   "short_name": "TaskBox",
   "description": "游戏化任务管理",
-  "start_url": "/time_control_app/",
+  "start_url": "/things_control_app/",
   "display": "standalone",
   "background_color": "#FFF8EF",
   "theme_color": "#F7774D",
@@ -19,5 +19,5 @@
       "type": "image/svg+xml"
     }
   ],
-  "scope": "/time_control_app/"
+  "scope": "/things_control_app/"
 }
