@@ -110,7 +110,7 @@ export function renderSettings(app) {
             <p class="eyebrow">Data</p>
             <h3>积分账本</h3>
           </div>
-          <p class="panel-note">默认使用本地 `data/mock-points.json`，后面可以切到你的 Gist Raw URL。</p>
+          <p class="panel-note">现在默认读取你的 GitHub Gist Raw 链接；如果后面换地址，也可以直接在这里改。</p>
         </div>
         <label>积分 JSON URL（可留空）
           <input id="pointsDataUrl" class="input" value="${escapeHtml(settings.pointsDataUrl || '')}" placeholder="https://gist.githubusercontent.com/.../mock-points.json">

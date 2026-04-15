@@ -82,6 +82,7 @@ const BOX_COLOR_POOL = ['important', 'relax', 'reward', 'misc', 'punish', 'study
 const DEFAULT_PAVILION_URL = 'https://gist.githubusercontent.com/wangjun6561-ui/6a56c7352da690f8aeca47262361243b/raw/1f947c59ab7be5f873b92d66f71f3d941f7ea5e1/pavilion.json';
 const LEGACY_TOWER_URL = 'https://gist.githubusercontent.com/wangjun6561-ui/6a56c7352da690f8aeca47262361243b/raw/1f947c59ab7be5f873b92d66f71f3d941f7ea5e1/tower.json';
 const DEFAULT_TOWER_URL = 'https://gist.githubusercontent.com/wangjun6561-ui/6a56c7352da690f8aeca47262361243b/raw/8cf924c148ac25cfc443c685e204d75b29da69e1/tower.json';
+const DEFAULT_POINTS_URL = 'https://gist.githubusercontent.com/wangjun6561-ui/90218455bf94dbce57dedabb07fa386a/raw/3c3bee39eb4995cabc5c58312ee5c30aa9598c08/mock-points.json';
 
 export function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -116,7 +117,7 @@ function normalize(data = {}) {
       towerDataUrl: !data.settings?.towerDataUrl || data.settings?.towerDataUrl === LEGACY_TOWER_URL
         ? DEFAULT_TOWER_URL
         : data.settings.towerDataUrl,
-      pointsDataUrl: data.settings?.pointsDataUrl || '',
+      pointsDataUrl: data.settings?.pointsDataUrl || DEFAULT_POINTS_URL,
       flomoWebhook: data.settings?.flomoWebhook || '',
       githubToken: data.settings?.githubToken || '',
     },
@@ -153,7 +154,7 @@ function seed() {
   const initial = normalize({
     boxes,
     tasks,
-    settings: { deepseekApiKey: 'sk-ddabde5745eb401ea45777acf76b673c', themeMode: 'system', soundEnabled: true, cloudEnabled: true, cloudEndpoint: 'v3/b/69d3d1bb856a68218904f116', cloudToken: '$2a$10$xCOfTmFVhdMLbv/wEL/UgeCFzBNO/He3sUcqV6OpwMJ.B/mmmxxaa', pointsDataUrl: '', flomoWebhook: '', githubToken: '' },
+    settings: { deepseekApiKey: 'sk-ddabde5745eb401ea45777acf76b673c', themeMode: 'system', soundEnabled: true, cloudEnabled: true, cloudEndpoint: 'v3/b/69d3d1bb856a68218904f116', cloudToken: '$2a$10$xCOfTmFVhdMLbv/wEL/UgeCFzBNO/He3sUcqV6OpwMJ.B/mmmxxaa', pointsDataUrl: DEFAULT_POINTS_URL, flomoWebhook: '', githubToken: '' },
     meta: { updatedAt: now, lastDailyReset: '', lastSummaryExportAt: null },
   });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));

@@ -2138,6 +2138,61 @@ select:focus {
   gap: 12px;
 }
 
+.points-reward-sections,
+.points-manage-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.points-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.points-group-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.points-group-head p {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.points-group-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+:root[data-theme='dark'] .points-group-count {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.points-reward-group-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.points-heading-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
 .points-rule-card,
 .points-reward-card,
 .points-transaction {
@@ -2242,6 +2297,14 @@ select:focus {
   font-weight: 800;
 }
 
+.points-filter-panel {
+  gap: 10px;
+}
+
+.points-filter-tabs {
+  margin-top: 0;
+}
+
 .points-ledger {
   display: flex;
   flex-direction: column;
@@ -2309,6 +2372,146 @@ select:focus {
   grid-column: 1 / -1;
 }
 
+.points-manage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.points-manage-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.points-manage-card {
+  border-radius: 22px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.52);
+  padding: 16px;
+}
+
+:root[data-theme='dark'] .points-manage-card {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.points-manage-card.inactive {
+  opacity: 0.72;
+}
+
+.points-manage-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.points-manage-title {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.points-manage-title p {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.points-manage-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+:root[data-theme='dark'] .points-manage-state {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.points-inline-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.points-empty-sheet {
+  padding: 28px 18px;
+}
+
+.points-switch-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  min-height: 44px;
+}
+
+.points-switch-row input {
+  width: 18px;
+  height: 18px;
+}
+
+.points-confirm-card {
+  border-radius: 24px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.62);
+  padding: 16px;
+}
+
+:root[data-theme='dark'] .points-confirm-card {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.points-confirm-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.points-confirm-metric {
+  border-radius: 18px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.52);
+  padding: 14px;
+}
+
+:root[data-theme='dark'] .points-confirm-metric {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.points-confirm-metric span {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.points-confirm-metric strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 18px;
+}
+
+.points-confirm-warning {
+  border-radius: 18px;
+  padding: 12px 14px;
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+  line-height: 1.55;
+  font-size: 13px;
+}
+
+.points-confirm-warning.danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+}
+
 .sw-result-actions {
   margin-top: 14px;
 }
@@ -2372,6 +2575,17 @@ select:focus {
   .points-rule-grid,
   .points-reward-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .points-heading-actions,
+  .points-manage-head,
+  .points-group-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .points-confirm-metrics {
+    grid-template-columns: 1fr;
   }
 
   .points-transaction {

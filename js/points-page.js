@@ -1,16 +1,27 @@
 import { navigate, openSheet, showToast } from './app.js';
 import {
   ensurePointsData,
+  getFilteredTransactions,
   getMilestoneBonuses,
   getPointPresets,
   getPointsSourceUrl,
+  POINTS_SOURCE_FILTERS,
   getPointsSummary,
-  getRecentTransactions,
   getRewardCatalog,
+  getRewardPool,
   recordHistoricalBalance,
   recordPointsTransaction,
   redeemReward,
+  saveReward,
+  toggleRewardActive,
 } from './points-store.js';
+
+const BUCKET_FILTERS = [
+  { id: 'all', label: '全部流水' },
+  { id: 'earn', label: '收入' },
+  { id: 'spend', label: '支出' },
+  { id: 'adjust', label: '调整' },
+];
 
 function escapeHtml(value = '') {
   return String(value)
@@ -37,9 +48,26 @@ function formatTime(value) {
 
 function getSourceLabel(pointsData) {
   const url = pointsData.meta.sourceUrl || getPointsSourceUrl();
-  if (!url || url.endsWith('data/mock-points.json')) return '本地 mock JSON';
   if (url.includes('gist.githubusercontent.com')) return 'GitHub Gist';
+  if (!url) return '本地 mock JSON';
+  if (!/^https?:/i.test(url) && (url.endsWith('mock-points.json') || url.endsWith('data/mock-points.json'))) return '本地 mock JSON';
   return '自定义 JSON';
+}
+
+function groupRewardsByCategory(rewards = []) {
+  const groups = new Map();
+  rewards.forEach((reward) => {
+    const category = reward.category || '未分类';
+    if (!groups.has(category)) groups.set(category, []);
+    groups.get(category).push(reward);
+  });
+
+  return [...groups.entries()]
+    .map(([category, items]) => ({
+      category,
+      items: [...items].sort((a, b) => a.cost - b.cost || a.title.localeCompare(b.title, 'zh-CN')),
+    }))
+    .sort((a, b) => a.category.localeCompare(b.category, 'zh-CN'));
 }
 
 function renderRuleCard(item) {
@@ -74,6 +102,23 @@ function renderRewardCard(reward, balance) {
   `;
 }
 
+function renderRewardGroups(rewards, balance) {
+  return groupRewardsByCategory(rewards).map((group) => `
+    <section class="points-group">
+      <div class="points-group-head">
+        <div>
+          <strong>${escapeHtml(group.category)}</strong>
+          <p>${group.items.length} 个奖励项</p>
+        </div>
+        <span class="points-group-count">总价 ${group.items.reduce((sum, item) => sum + item.cost, 0)} 分</span>
+      </div>
+      <div class="points-reward-grid points-reward-group-grid">
+        ${group.items.map((reward) => renderRewardCard(reward, balance)).join('')}
+      </div>
+    </section>
+  `).join('');
+}
+
 function renderTransaction(transaction) {
   const positive = Number(transaction.delta) >= 0;
   return `
@@ -89,14 +134,88 @@ function renderTransaction(transaction) {
   `;
 }
 
-export async function renderPointsPage(app) {
+function renderFilterTabs(items, activeId, dataKey) {
+  return `
+    <div class="tabs points-filter-tabs">
+      ${items.map((item) => `
+        <button class="tab ${item.id === activeId ? 'active' : ''}" data-${dataKey}="${item.id}">
+          ${escapeHtml(item.label)}
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderRewardManagerCard(reward) {
+  return `
+    <article class="points-manage-card ${reward.active ? '' : 'inactive'}">
+      <div class="points-manage-head">
+        <div class="points-manage-title">
+          <span class="points-reward-icon">${escapeHtml(reward.icon || '🎁')}</span>
+          <div>
+            <strong>${escapeHtml(reward.title)}</strong>
+            <p>${escapeHtml(reward.category)} · ${reward.cost} 分</p>
+          </div>
+        </div>
+        <span class="points-manage-state">${reward.active ? '启用中' : '已停用'}</span>
+      </div>
+      <p class="points-reward-desc">${escapeHtml(reward.description || '暂无说明')}</p>
+      <div class="points-inline-actions">
+        <button class="btn subtle compact" data-edit-reward="${reward.id}">编辑</button>
+        <button class="btn subtle compact" data-toggle-reward="${reward.id}">${reward.active ? '停用' : '启用'}</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderRewardManagerGroups(rewards) {
+  return groupRewardsByCategory(rewards).map((group) => `
+    <section class="points-manage-group">
+      <div class="points-group-head">
+        <div>
+          <strong>${escapeHtml(group.category)}</strong>
+          <p>${group.items.length} 个奖励项</p>
+        </div>
+        <span class="points-group-count">${group.items.filter((item) => item.active).length} 个启用中</span>
+      </div>
+      <div class="points-manage-list">
+        ${group.items.map(renderRewardManagerCard).join('')}
+      </div>
+    </section>
+  `).join('');
+}
+
+function getLedgerEmptyCopy(filters) {
+  if (filters.bucket !== 'all' || filters.source !== 'all') {
+    return {
+      title: '当前筛选下没有流水',
+      body: '可以切回全部流水，或者再新增一笔积分看看效果。',
+    };
+  }
+  return {
+    title: '还没有积分流水',
+    body: '先补录历史积分，或者完成第一条任务拿到第一笔积分。',
+  };
+}
+
+function rerenderWithState(app, state) {
+  return renderPointsPage(app, state);
+}
+
+export async function renderPointsPage(app, viewState = {}) {
+  const filters = {
+    bucket: viewState.bucket || 'all',
+    source: viewState.source || 'all',
+  };
   const pointsData = await ensurePointsData();
   const summary = getPointsSummary(pointsData);
   const pointPresets = getPointPresets(pointsData);
   const milestoneBonuses = getMilestoneBonuses(pointsData);
   const rewards = getRewardCatalog(pointsData);
-  const transactions = getRecentTransactions(24, pointsData);
+  const rewardPool = getRewardPool(pointsData, { includeInactive: true });
+  const transactions = getFilteredTransactions({ limit: 80, bucket: filters.bucket, source: filters.source }, pointsData);
   const balance = summary.balance;
+  const emptyCopy = getLedgerEmptyCopy(filters);
 
   app.innerHTML = `
     <main class="page points-page" id="points-page">
@@ -162,17 +281,20 @@ export async function renderPointsPage(app) {
           <p class="eyebrow">Rewards</p>
           <h2>奖励兑换</h2>
         </div>
-        <p class="section-note">余额不够时，不允许直接消费。</p>
+        <div class="points-heading-actions">
+          <p class="section-note">${rewardPool.length} 个奖励项，支持本地编辑和停用。</p>
+          <button class="btn subtle compact" id="manageRewardsBtn">管理奖励池</button>
+        </div>
       </section>
 
-      <section class="points-reward-grid">
+      <section class="points-reward-sections">
         ${rewards.length
-          ? rewards.map((reward) => renderRewardCard(reward, balance)).join('')
+          ? renderRewardGroups(rewards, balance)
           : `
             <div class="empty-state points-empty">
               <div>🎁</div>
-              <h3>还没有奖励池</h3>
-              <p>先在 mock JSON 里放几个奖励，晚上我们再一起细化价格表。</p>
+              <h3>还没有可兑换奖励</h3>
+              <p>先去管理奖励池里加几项，晚上我们再一起细化价格表。</p>
             </div>
           `}
       </section>
@@ -182,7 +304,12 @@ export async function renderPointsPage(app) {
           <p class="eyebrow">Ledger</p>
           <h2>积分流水</h2>
         </div>
-        <p class="section-note">最近 ${transactions.length} 笔，来源和去向都能查到。</p>
+        <p class="section-note">支持按收入、支出、任务得分、奖励兑换来筛选。</p>
+      </section>
+
+      <section class="panel points-filter-panel">
+        ${renderFilterTabs(BUCKET_FILTERS, filters.bucket, 'bucket-filter')}
+        ${renderFilterTabs(POINTS_SOURCE_FILTERS, filters.source, 'source-filter')}
       </section>
 
       <section class="points-ledger">
@@ -191,8 +318,8 @@ export async function renderPointsPage(app) {
           : `
             <div class="empty-state points-empty">
               <div>🧾</div>
-              <h3>还没有积分流水</h3>
-              <p>先补录历史积分，或者完成第一条任务拿到第一笔积分。</p>
+              <h3>${escapeHtml(emptyCopy.title)}</h3>
+              <p>${escapeHtml(emptyCopy.body)}</p>
             </div>
           `}
       </section>
@@ -202,21 +329,41 @@ export async function renderPointsPage(app) {
   app.querySelector('#pointsBackBtn').addEventListener('click', () => navigate('#home'));
   app.querySelector('#pointsSettingsBtn').addEventListener('click', () => navigate('#settings'));
   app.querySelector('#pointsHistoryBtn').addEventListener('click', () => {
-    openHistoricalSheet(() => renderPointsPage(app));
+    openHistoricalSheet(() => rerenderWithState(app, filters));
   });
   app.querySelector('#pointsManualBtn').addEventListener('click', () => {
-    openManualTransactionSheet(() => renderPointsPage(app));
+    openManualTransactionSheet(() => rerenderWithState(app, filters));
+  });
+  app.querySelector('#manageRewardsBtn').addEventListener('click', () => {
+    openRewardManagerSheet({ app, viewState: filters });
   });
 
   app.querySelectorAll('[data-redeem]').forEach((button) => {
     button.addEventListener('click', () => {
-      const result = redeemReward(button.dataset.redeem);
-      if (!result.ok) {
-        showToast(result.reason === 'insufficient' ? '积分不够，先去完成任务攒分。' : '奖励兑换失败');
+      const reward = rewards.find((item) => item.id === button.dataset.redeem);
+      if (!reward) {
+        showToast('奖励不存在或已被移除');
         return;
       }
-      showToast(`已兑换 ${result.reward.title}，扣除 ${result.reward.cost} 分`);
-      renderPointsPage(app);
+      openRewardRedeemSheet({ app, viewState: filters, reward });
+    });
+  });
+
+  app.querySelectorAll('[data-bucket-filter]').forEach((button) => {
+    button.addEventListener('click', () => {
+      rerenderWithState(app, {
+        ...filters,
+        bucket: button.dataset.bucketFilter,
+      });
+    });
+  });
+
+  app.querySelectorAll('[data-source-filter]').forEach((button) => {
+    button.addEventListener('click', () => {
+      rerenderWithState(app, {
+        ...filters,
+        source: button.dataset.sourceFilter,
+      });
     });
   });
 }
@@ -302,5 +449,181 @@ function openManualTransactionSheet(onDone) {
     close();
     showToast(`已记账 ${formatDelta(delta)}`);
     onDone?.();
+  });
+}
+
+function openRewardManagerSheet({ app, viewState }) {
+  const rewards = getRewardPool(null, { includeInactive: true });
+  const { root, close } = openSheet(`
+    <div class="sheet-handle"></div>
+    <div class="sheet-content">
+      <p class="eyebrow">Reward Pool</p>
+      <h3>管理奖励池</h3>
+      <p class="sheet-lead">奖励现在可以在系统里本地维护，先把清单跑起来，后面再切到 Gist 同步。</p>
+      <section class="points-manage-groups">
+        ${rewards.length
+          ? renderRewardManagerGroups(rewards)
+          : `
+            <div class="empty-state points-empty-sheet">
+              <div>🎁</div>
+              <h3>奖励池还是空的</h3>
+              <p>先新增第一项奖励，后面就能直接兑换和扣分了。</p>
+            </div>
+          `}
+      </section>
+      <div class="sheet-actions">
+        <button class="btn" id="rewardCloseBtn">关闭</button>
+        <button class="btn primary" id="rewardAddBtn">新增奖励</button>
+      </div>
+    </div>
+  `, { height: '82vh' });
+
+  root.querySelector('#rewardCloseBtn').addEventListener('click', close);
+  root.querySelector('#rewardAddBtn').addEventListener('click', () => {
+    close();
+    openRewardEditorSheet({ app, viewState, reopenManager: true });
+  });
+
+  root.querySelectorAll('[data-edit-reward]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const reward = rewards.find((item) => item.id === button.dataset.editReward);
+      close();
+      openRewardEditorSheet({ app, viewState, reward, reopenManager: true });
+    });
+  });
+
+  root.querySelectorAll('[data-toggle-reward]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const changed = toggleRewardActive(button.dataset.toggleReward);
+      if (!changed) {
+        showToast('奖励状态更新失败');
+        return;
+      }
+      showToast(changed.active ? `已启用 ${changed.title}` : `已停用 ${changed.title}`);
+      close();
+      await rerenderWithState(app, viewState);
+      openRewardManagerSheet({ app, viewState });
+    });
+  });
+}
+
+function openRewardRedeemSheet({ app, viewState, reward }) {
+  const summary = getPointsSummary();
+  const balance = summary.balance;
+  const remaining = balance - reward.cost;
+  const affordable = remaining >= 0;
+  const { root, close } = openSheet(`
+    <div class="sheet-handle"></div>
+    <div class="sheet-content">
+      <p class="eyebrow">Redeem Reward</p>
+      <h3>确认兑换</h3>
+      <p class="sheet-lead">奖励消费也要进账本。确认之后会立刻扣分，后面就按已兑换执行。</p>
+      <article class="points-confirm-card">
+        <div class="points-manage-title">
+          <span class="points-reward-icon">${escapeHtml(reward.icon || '🎁')}</span>
+          <div>
+            <strong>${escapeHtml(reward.title)}</strong>
+            <p>${escapeHtml(reward.category || '未分类')} · ${reward.cost} 分</p>
+          </div>
+        </div>
+        ${reward.description ? `<p class="points-reward-desc">${escapeHtml(reward.description)}</p>` : ''}
+      </article>
+      <div class="points-confirm-metrics">
+        <article class="points-confirm-metric">
+          <span>当前余额</span>
+          <strong>${balance} 分</strong>
+        </article>
+        <article class="points-confirm-metric">
+          <span>兑换后余额</span>
+          <strong>${remaining} 分</strong>
+        </article>
+      </div>
+      ${affordable
+        ? `<p class="points-confirm-warning">这次消费会被正式记到账本里，不再是口头奖励。</p>`
+        : `<p class="points-confirm-warning danger">当前积分不够，先去完成任务再回来兑换。</p>`}
+      <div class="sheet-actions">
+        <button class="btn" id="rewardRedeemCancelBtn">取消</button>
+        <button class="btn primary" id="rewardRedeemConfirmBtn" ${affordable ? '' : 'disabled'}>确认兑换</button>
+      </div>
+    </div>
+  `, { height: '62vh' });
+
+  root.querySelector('#rewardRedeemCancelBtn').addEventListener('click', close);
+  root.querySelector('#rewardRedeemConfirmBtn').addEventListener('click', async () => {
+    const result = redeemReward(reward.id);
+    if (!result.ok) {
+      showToast(result.reason === 'insufficient' ? '积分不够，先去完成任务攒分。' : '奖励兑换失败');
+      return;
+    }
+    close();
+    showToast(`已兑换 ${result.reward.title}，扣除 ${result.reward.cost} 分`);
+    await rerenderWithState(app, viewState);
+  });
+}
+
+function openRewardEditorSheet({ app, viewState, reward = null, reopenManager = false }) {
+  const { root, close } = openSheet(`
+    <div class="sheet-handle"></div>
+    <div class="sheet-content">
+      <p class="eyebrow">Reward Editor</p>
+      <h3>${reward ? '编辑奖励' : '新增奖励'}</h3>
+      <p class="sheet-lead">这里先把名称、价格和用途写清楚，后续再一起打磨价格体系。</p>
+      <label>奖励名称
+        <input id="rewardTitle" class="input" value="${escapeHtml(reward?.title || '')}" placeholder="例如：奶茶 / 短视频 30 分钟">
+      </label>
+      <label>积分价格
+        <input id="rewardCost" class="input" type="number" min="0" step="1" value="${reward?.cost ?? ''}" placeholder="例如 18">
+      </label>
+      <label>分类
+        <input id="rewardCategory" class="input" value="${escapeHtml(reward?.category || '')}" placeholder="例如：娱乐 / 放松 / 消费">
+      </label>
+      <label>图标
+        <input id="rewardIcon" class="input" value="${escapeHtml(reward?.icon || '🎁')}" placeholder="例如：🥤">
+      </label>
+      <label>说明
+        <textarea id="rewardDescription" class="input" rows="4" placeholder="写清楚这个奖励什么时候可以兑换">${escapeHtml(reward?.description || '')}</textarea>
+      </label>
+      <label class="points-switch-row">
+        <span>启用状态</span>
+        <input id="rewardActive" type="checkbox" ${reward?.active !== false ? 'checked' : ''}>
+      </label>
+      <div class="sheet-actions">
+        <button class="btn" id="rewardCancelBtn">取消</button>
+        <button class="btn primary" id="rewardSaveBtn">保存奖励</button>
+      </div>
+    </div>
+  `, { height: '84vh' });
+
+  root.querySelector('#rewardCancelBtn').addEventListener('click', close);
+  root.querySelector('#rewardSaveBtn').addEventListener('click', async () => {
+    const title = root.querySelector('#rewardTitle').value.trim();
+    const cost = Math.max(0, Math.round(Number(root.querySelector('#rewardCost').value) || 0));
+    const category = root.querySelector('#rewardCategory').value.trim();
+    const icon = root.querySelector('#rewardIcon').value.trim();
+    const description = root.querySelector('#rewardDescription').value.trim();
+    const active = root.querySelector('#rewardActive').checked;
+
+    if (!title) {
+      showToast('先写奖励名称');
+      return;
+    }
+
+    try {
+      const saved = saveReward({
+        id: reward?.id,
+        title,
+        cost,
+        category: category || '未分类',
+        icon: icon || '🎁',
+        description,
+        active,
+      });
+      close();
+      showToast(`${reward ? '已更新' : '已新增'}奖励：${saved.title}`);
+      await rerenderWithState(app, viewState);
+      if (reopenManager) openRewardManagerSheet({ app, viewState });
+    } catch {
+      showToast('奖励保存失败，请检查名称和价格');
+    }
   });
 }

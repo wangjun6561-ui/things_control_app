@@ -1,7 +1,8 @@
 export const POINTS_CACHE_KEY = 'taskbox_points_cache';
+export const DEFAULT_POINTS_URL = 'https://gist.githubusercontent.com/wangjun6561-ui/90218455bf94dbce57dedabb07fa386a/raw/3c3bee39eb4995cabc5c58312ee5c30aa9598c08/mock-points.json';
 
 const TASKBOX_STORAGE_KEY = 'taskbox_data';
-const DEFAULT_POINTS_URL = 'data/mock-points.json';
+const LOCAL_POINTS_FALLBACK_URL = 'mock-points.json';
 const DEFAULT_POINTS_TEMPLATE = {
   version: 1,
   account: {
@@ -192,7 +193,7 @@ function createFallbackPointsData() {
   const fallback = structuredClone(DEFAULT_POINTS_TEMPLATE);
   fallback.meta.createdAt = nowIso();
   fallback.meta.updatedAt = fallback.meta.createdAt;
-  fallback.meta.sourceUrl = DEFAULT_POINTS_URL;
+  fallback.meta.sourceUrl = LOCAL_POINTS_FALLBACK_URL;
   return normalizePointsData(fallback);
 }
 
@@ -218,9 +219,10 @@ export function getPointsDataSync() {
 
 export async function ensurePointsData({ forceSource = false } = {}) {
   const cached = readCache();
-  if (cached && !forceSource) return cached;
-
   const url = getPointsSourceUrl();
+  const sourceChanged = cached && String(cached.meta?.sourceUrl || '').trim() !== url;
+  if (cached && !forceSource && !sourceChanged) return cached;
+
   try {
     const seeded = await fetchSource(url);
     return writeCache(seeded, { dirty: false });
@@ -292,6 +294,13 @@ export function getRewardCatalog(pointsData = null) {
     .sort((a, b) => a.cost - b.cost || a.title.localeCompare(b.title, 'zh-CN'));
 }
 
+export function getRewardPool(pointsData = null, { includeInactive = true } = {}) {
+  const rewards = [...(pointsData || getPointsDataSync()).rewards];
+  return rewards
+    .filter((reward) => includeInactive || reward.active)
+    .sort((a, b) => Number(b.active) - Number(a.active) || a.cost - b.cost || a.title.localeCompare(b.title, 'zh-CN'));
+}
+
 export function getPointsBalance(pointsData = null) {
   return (pointsData || getPointsDataSync()).transactions.reduce((sum, transaction) => sum + toNumber(transaction.delta, 0), 0);
 }
@@ -328,6 +337,35 @@ export function getRecentTransactions(limit = 20, pointsData = null) {
   return [...(pointsData || getPointsDataSync()).transactions]
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, limit);
+}
+
+export const POINTS_SOURCE_FILTERS = [
+  { id: 'all', label: '全部来源', sourceTypes: null },
+  { id: 'task', label: '任务得分', sourceTypes: ['task_completion', 'task_completion_reversal', 'task_points_adjustment'] },
+  { id: 'reward', label: '奖励兑换', sourceTypes: ['reward_redeem'] },
+  { id: 'manual', label: '手动记账', sourceTypes: ['manual_adjustment'] },
+  { id: 'history', label: '历史补录', sourceTypes: ['historical_balance'] },
+];
+
+export function getFilteredTransactions({
+  limit = 40,
+  bucket = 'all',
+  source = 'all',
+} = {}, pointsData = null) {
+  const data = pointsData || getPointsDataSync();
+  const sourceFilter = POINTS_SOURCE_FILTERS.find((item) => item.id === source) || POINTS_SOURCE_FILTERS[0];
+
+  let transactions = [...data.transactions].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  if (bucket !== 'all') {
+    transactions = transactions.filter((transaction) => transaction.bucket === bucket);
+  }
+
+  if (sourceFilter.sourceTypes?.length) {
+    transactions = transactions.filter((transaction) => sourceFilter.sourceTypes.includes(transaction.sourceType));
+  }
+
+  return limit ? transactions.slice(0, limit) : transactions;
 }
 
 export function recordPointsTransaction({
@@ -393,6 +431,39 @@ export function redeemReward(rewardId) {
     transaction,
     balance: getPointsBalance(getPointsDataSync()),
   };
+}
+
+export function saveReward(rewardDraft = {}) {
+  const normalizedDraft = normalizeReward({
+    ...rewardDraft,
+    id: rewardDraft.id || uid(),
+  });
+
+  if (!normalizedDraft.title) throw new Error('reward_title_required');
+  if (!Number.isFinite(Number(normalizedDraft.cost)) || normalizedDraft.cost < 0) throw new Error('reward_cost_invalid');
+
+  let saved = null;
+  updatePointsData((data) => {
+    const existing = data.rewards.find((reward) => reward.id === normalizedDraft.id);
+    if (existing) Object.assign(existing, normalizedDraft);
+    else data.rewards.push(normalizedDraft);
+    saved = normalizedDraft;
+    return data;
+  });
+
+  return saved;
+}
+
+export function toggleRewardActive(rewardId) {
+  let changed = null;
+  updatePointsData((data) => {
+    const reward = data.rewards.find((item) => item.id === rewardId);
+    if (!reward) return data;
+    reward.active = !reward.active;
+    changed = { ...reward };
+    return data;
+  });
+  return changed;
 }
 
 export function syncTaskCompletionPoints({ task, box, completed }) {
