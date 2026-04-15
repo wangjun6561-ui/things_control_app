@@ -1,6 +1,7 @@
 import { getBoxes, getTasksByBox, updateTask, deleteTask, reorderTasks, updateBox, addTask, playSound, restoreTask } from './db.js';
 import { navigate, openSheet, showToast } from './app.js';
 import { openLuckyWheel } from './lucky-wheel.js';
+import { getTaskPointValue, reconcileCompletedTaskPoints, syncTaskCompletionPoints } from './points-store.js';
 
 const LONG_PRESS_MS = 500;
 const DELETE_SWIPE_THRESHOLD = 120;
@@ -130,12 +131,12 @@ export function renderBoxDetail(app, boxId) {
             <p>先加一条任务，让这个盒子开始运转。</p>
           </div>
         ` : `
-          <div id="openTasks">${openTasks.map((task) => taskItem(task)).join('')}</div>
+          <div id="openTasks">${openTasks.map((task) => taskItem(task, box)).join('')}</div>
         `}
 
         ${doneTasks.length ? `
           <button class="completed-toggle" id="toggleDone">已完成 ${doneTasks.length} 项 ▸</button>
-          <div id="doneTasks" class="collapsed">${doneTasks.map((task) => taskItem(task)).join('')}</div>
+          <div id="doneTasks" class="collapsed">${doneTasks.map((task) => taskItem(task, box)).join('')}</div>
         ` : ''}
       </section>
 
@@ -169,12 +170,13 @@ export function renderBoxDetail(app, boxId) {
   bindTaskEvents(app, box, taskMap);
 }
 
-function taskItem(task) {
+function taskItem(task, box) {
   const overdue = task.dueDate && !task.isCompleted && new Date(task.dueDate) < new Date();
   const color = getPriorityColor(task.priority ?? 0);
   const taskProgress = Math.max(0, Math.min(100, Number(task.progress) || 0));
   const hasNote = Boolean((task.note || '').trim());
   const notePreview = hasNote ? escapeHtml(String(task.note).trim().slice(0, 40)) : '';
+  const pointsValue = getTaskPointValue(task, box);
 
   return `
     <article class="task-item ${task.isCompleted ? 'done' : ''}" data-id="${task.id}">
@@ -189,6 +191,7 @@ function taskItem(task) {
             <span class="task-chip">${escapeHtml(getPriorityLabel(task.priority ?? 0))}</span>
             ${task.dueDate ? `<span class="task-chip ${overdue ? 'overdue-chip' : ''}">${escapeHtml(formatDueLabel(task.dueDate))}</span>` : ''}
             <span class="task-chip">${taskProgress}%</span>
+            ${pointsValue > 0 ? `<span class="task-chip points-chip">+${pointsValue} 分</span>` : ''}
           </div>
           ${hasNote ? `<p class="task-note-preview">${notePreview}${String(task.note).trim().length > 40 ? '…' : ''}</p>` : ''}
           <div class="mini-progress"><span style="width:${taskProgress}%; background:${color}"></span></div>
@@ -206,12 +209,23 @@ function bindTaskEvents(app, box, taskMap) {
     item.querySelector('.check').addEventListener('click', (event) => {
       event.stopPropagation();
       const checked = item.classList.contains('done');
-      updateTask(taskId, {
+      const currentTask = taskMap.get(taskId);
+      const nextTask = {
+        ...currentTask,
         isCompleted: !checked,
         progress: checked ? 80 : 100,
         completedAt: checked ? null : new Date().toISOString(),
+      };
+      updateTask(taskId, {
+        isCompleted: nextTask.isCompleted,
+        progress: nextTask.progress,
+        completedAt: nextTask.completedAt,
       });
+      const pointsResult = syncTaskCompletionPoints({ task: nextTask, box, completed: nextTask.isCompleted });
       playSound('complete');
+      if (pointsResult.changed) {
+        showToast(pointsResult.delta > 0 ? `已获得 +${pointsResult.delta} 积分` : `已回收 ${Math.abs(pointsResult.delta)} 积分`);
+      }
       setTimeout(() => renderBoxDetail(app, box.id), 220);
     });
 
@@ -321,6 +335,8 @@ function openTaskEditor({ taskId, boxId }, onDone) {
   const boxes = getBoxes();
   const currentTasks = getTasksByBox(boxId);
   const task = currentTasks.find((item) => item.id === taskId);
+  const initialBox = boxes.find((box) => box.id === (task?.boxId || boxId)) || boxes[0] || null;
+  const initialPoints = task ? getTaskPointValue(task, initialBox) : getTaskPointValue({ boxId: initialBox?.id }, initialBox);
   const { root, close } = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-content">
@@ -350,6 +366,7 @@ function openTaskEditor({ taskId, boxId }, onDone) {
 
       <label>截止日期<input id="taskDate" class="input" type="date" value="${task?.dueDate ? task.dueDate.slice(0, 10) : ''}"></label>
       <label>抽奖权重（选填，默认 1）<input id="taskWeight" class="input" type="number" min="1" step="1" placeholder="1" value="${task?.weight ?? ''}"></label>
+      <label>完成奖励积分<input id="taskPointsValue" class="input" type="number" min="0" step="1" value="${initialPoints}"></label>
       <label>所属盒子
         <select id="taskBox" class="input">
           ${boxes.map((box) => `<option value="${box.id}" ${box.id === (task?.boxId || boxId) ? 'selected' : ''}>${escapeHtml(box.name)}</option>`).join('')}
@@ -366,6 +383,8 @@ function openTaskEditor({ taskId, boxId }, onDone) {
 
   let priority = task?.priority ?? 0;
   let progress = task?.progress ?? 0;
+  const boxSelect = root.querySelector('#taskBox');
+  const pointsInput = root.querySelector('#taskPointsValue');
 
   root.querySelectorAll('.prio-dot').forEach((button) => {
     button.addEventListener('click', () => {
@@ -381,6 +400,16 @@ function openTaskEditor({ taskId, boxId }, onDone) {
     });
   });
 
+  pointsInput.addEventListener('input', () => {
+    pointsInput.dataset.touched = '1';
+  });
+  boxSelect.addEventListener('change', () => {
+    if (pointsInput.dataset.touched === '1') return;
+    const selectedBox = boxes.find((box) => box.id === boxSelect.value);
+    const referenceTask = task ? { ...task, boxId: boxSelect.value, priority } : { boxId: boxSelect.value, priority };
+    pointsInput.value = String(getTaskPointValue(referenceTask, selectedBox));
+  });
+
   root.querySelector('#cancelBtn').addEventListener('click', close);
   root.querySelector('#saveBtn').addEventListener('click', () => {
     const content = root.querySelector('#taskContent').value.trim();
@@ -390,14 +419,17 @@ function openTaskEditor({ taskId, boxId }, onDone) {
     }
 
     const nextBoxId = root.querySelector('#taskBox').value;
+    const selectedBox = boxes.find((box) => box.id === nextBoxId) || null;
     const due = root.querySelector('#taskDate').value || null;
     const weight = Math.max(1, Number(root.querySelector('#taskWeight').value) || 1);
+    const pointsValue = Math.max(0, Number(root.querySelector('#taskPointsValue').value) || 0);
     const done = progress >= 100;
     const payload = {
       content,
       priority,
       progress,
       weight,
+      pointsValue,
       dueDate: due ? new Date(due).toISOString() : null,
       boxId: nextBoxId,
       note: root.querySelector('#taskNote').value.trim(),
@@ -405,8 +437,26 @@ function openTaskEditor({ taskId, boxId }, onDone) {
       completedAt: done ? (task?.completedAt || new Date().toISOString()) : null,
     };
 
-    if (task) updateTask(task.id, payload);
-    else addTask(payload);
+    if (task) {
+      const previousPointsValue = getTaskPointValue(task, boxes.find((box) => box.id === task.boxId) || null);
+      updateTask(task.id, payload);
+      const nextTask = { ...task, ...payload, id: task.id };
+      let pointsResult = { changed: false, delta: 0 };
+      if (task.isCompleted !== nextTask.isCompleted) {
+        pointsResult = syncTaskCompletionPoints({ task: nextTask, box: selectedBox, completed: nextTask.isCompleted });
+      } else if (nextTask.isCompleted) {
+        pointsResult = reconcileCompletedTaskPoints({ task: nextTask, box: selectedBox, previousPointsValue });
+      }
+      if (pointsResult.changed) {
+        showToast(pointsResult.delta > 0 ? `积分已调整 +${pointsResult.delta}` : `积分已调整 ${pointsResult.delta}`);
+      }
+    } else {
+      const created = addTask(payload);
+      if (created?.isCompleted) {
+        const pointsResult = syncTaskCompletionPoints({ task: created, box: selectedBox, completed: true });
+        if (pointsResult.changed) showToast(`已获得 +${pointsResult.delta} 积分`);
+      }
+    }
 
     close();
     onDone();

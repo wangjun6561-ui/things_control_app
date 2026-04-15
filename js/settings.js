@@ -108,6 +108,19 @@ export function renderSettings(app) {
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Data</p>
+            <h3>积分账本</h3>
+          </div>
+          <p class="panel-note">默认使用本地 `data/mock-points.json`，后面可以切到你的 Gist Raw URL。</p>
+        </div>
+        <label>积分 JSON URL（可留空）
+          <input id="pointsDataUrl" class="input" value="${escapeHtml(settings.pointsDataUrl || '')}" placeholder="https://gist.githubusercontent.com/.../mock-points.json">
+        </label>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Data</p>
             <h3>数据管理</h3>
           </div>
           <p class="panel-note">导入会覆盖本地当前数据。</p>
@@ -155,6 +168,9 @@ export function renderSettings(app) {
   });
   app.querySelector('#cloudToken').addEventListener('input', (event) => {
     setSettings({ cloudToken: event.target.value.trim() });
+  });
+  app.querySelector('#pointsDataUrl').addEventListener('input', (event) => {
+    setSettings({ pointsDataUrl: event.target.value.trim() });
   });
 
   const syncCloudSettings = () => {

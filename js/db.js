@@ -97,6 +97,7 @@ function normalize(data = {}) {
     tasks: (Array.isArray(data.tasks) ? data.tasks : []).map((t) => ({
       ...t,
       weight: t.weight ?? 1,
+      pointsValue: t.pointsValue !== undefined && t.pointsValue !== null && Number.isFinite(Number(t.pointsValue)) ? Number(t.pointsValue) : null,
       progress: t.progress ?? (t.isCompleted ? 100 : 0),
       deleted: t.deleted ?? false,
       deletedAt: t.deletedAt ?? null,
@@ -115,6 +116,7 @@ function normalize(data = {}) {
       towerDataUrl: !data.settings?.towerDataUrl || data.settings?.towerDataUrl === LEGACY_TOWER_URL
         ? DEFAULT_TOWER_URL
         : data.settings.towerDataUrl,
+      pointsDataUrl: data.settings?.pointsDataUrl || '',
       flomoWebhook: data.settings?.flomoWebhook || '',
       githubToken: data.settings?.githubToken || '',
     },
@@ -151,7 +153,7 @@ function seed() {
   const initial = normalize({
     boxes,
     tasks,
-    settings: { deepseekApiKey: 'sk-ddabde5745eb401ea45777acf76b673c', themeMode: 'system', soundEnabled: true, cloudEnabled: true, cloudEndpoint: 'v3/b/69d3d1bb856a68218904f116', cloudToken: '$2a$10$xCOfTmFVhdMLbv/wEL/UgeCFzBNO/He3sUcqV6OpwMJ.B/mmmxxaa', flomoWebhook: '', githubToken: '' },
+    settings: { deepseekApiKey: 'sk-ddabde5745eb401ea45777acf76b673c', themeMode: 'system', soundEnabled: true, cloudEnabled: true, cloudEndpoint: 'v3/b/69d3d1bb856a68218904f116', cloudToken: '$2a$10$xCOfTmFVhdMLbv/wEL/UgeCFzBNO/He3sUcqV6OpwMJ.B/mmmxxaa', pointsDataUrl: '', flomoWebhook: '', githubToken: '' },
     meta: { updatedAt: now, lastDailyReset: '', lastSummaryExportAt: null },
   });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
@@ -246,14 +248,16 @@ export function getTasksByBox(boxId) {
 }
 
 export function addTask(task) {
+  let created = null;
   updateData((data) => {
     const maxOrder = Math.max(-1, ...data.tasks.filter((t) => t.boxId === task.boxId && !t.isCompleted).map((t) => t.sortOrder));
-    data.tasks.push({
+    created = {
       id: uid(),
       content: task.content,
       boxId: task.boxId,
       priority: task.priority ?? null,
       weight: task.weight ?? 1,
+      pointsValue: task.pointsValue ?? null,
       progress: task.progress ?? 0,
       dueDate: task.dueDate ?? null,
       isCompleted: task.isCompleted ?? false,
@@ -265,9 +269,11 @@ export function addTask(task) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       syncKey: `${new Date().toISOString()}::${task.content}`,
-    });
+    };
+    data.tasks.push(created);
     return data;
   });
+  return created;
 }
 
 function nextUniqueBoxColor(boxes) {
@@ -322,8 +328,9 @@ export function restoreTask(task) {
 }
 
 export function updateTask(taskId, patch) {
-  const cloudCriticalKeys = new Set(['content', 'boxId', 'priority', 'weight', 'progress', 'dueDate', 'isCompleted', 'deleted', 'deletedAt', 'sortOrder', 'completedAt']);
+  const cloudCriticalKeys = new Set(['content', 'boxId', 'priority', 'weight', 'pointsValue', 'progress', 'dueDate', 'isCompleted', 'deleted', 'deletedAt', 'sortOrder', 'completedAt']);
   const shouldCloudPush = Object.keys(patch || {}).some((k) => cloudCriticalKeys.has(k));
+  let updated = null;
   updateData((data) => {
     const t = data.tasks.find((x) => x.id === taskId);
     if (t) {
@@ -332,9 +339,11 @@ export function updateTask(taskId, patch) {
         t.syncKey = `${t.createdAt}::${t.content}`;
       }
       t.updatedAt = new Date().toISOString();
+      updated = { ...t };
     }
     return data;
   }, { skipCloud: !shouldCloudPush });
+  return updated;
 }
 
 export function deleteTask(taskId) {
@@ -375,7 +384,19 @@ export function setSettings(patch) {
 }
 
 export function exportData() {
-  const blob = new Blob([JSON.stringify(getData(), null, 2)], { type: 'application/json' });
+  const backup = {
+    ...getData(),
+    __pointsCache: (() => {
+      const raw = localStorage.getItem('taskbox_points_cache');
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    })(),
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'taskbox-backup.json';
@@ -385,8 +406,12 @@ export function exportData() {
 
 export async function importData(file) {
   const text = await file.text();
-  const parsed = normalize(JSON.parse(text));
+  const imported = JSON.parse(text);
+  const parsed = normalize(imported);
   saveData(parsed);
+  if (imported?.__pointsCache) {
+    localStorage.setItem('taskbox_points_cache', JSON.stringify(imported.__pointsCache));
+  }
 }
 
 export function exportDailySummary() {

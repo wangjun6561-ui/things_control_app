@@ -112,6 +112,14 @@ function route() {
     });
     return;
   }
+  if (path === 'points') {
+    const load = ROUTE_MODULE_CACHE.points || import('./points-page.js');
+    ROUTE_MODULE_CACHE.points = load;
+    load.then(({ renderPointsPage }) => {
+      renderPointsPage(app).then(() => requestAnimationFrame(resetViewPosition));
+    });
+    return;
+  }
   if (path === 'smallworld' || path === 'sw-settings' || (path === 'sw' && (param === 'pavilion' || param === 'tower') && subParam)) {
     const load = ROUTE_MODULE_CACHE.smallworld || import('./small-world.js');
     ROUTE_MODULE_CACHE.smallworld = load;
@@ -176,6 +184,10 @@ function warmupCriticalModules() {
     ROUTE_MODULE_CACHE.smallworld = ROUTE_MODULE_CACHE.smallworld || import('./small-world.js');
     ROUTE_MODULE_CACHE.smallworld
       .then(({ prewarmSmallWorldData }) => prewarmSmallWorldData().catch(() => {}))
+      .catch(() => {});
+
+    import('./points-store.js')
+      .then(({ prewarmPointsData }) => prewarmPointsData?.())
       .catch(() => {});
 
     import('./ai-extract.js').catch(() => {});

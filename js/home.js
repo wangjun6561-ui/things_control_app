@@ -1,5 +1,6 @@
 import { getBoxes, getTasks, addTask, addBox } from './db.js';
 import { navigate, openSheet, showToast } from './app.js';
+import { getPointsSummary, getTaskPointValue } from './points-store.js';
 
 const BOX_FALLBACK_COPY = {
   important: '把最高优先级的事情放到最显眼的位置。',
@@ -100,6 +101,7 @@ function renderBoxPreview(box, pendingTasks) {
 export function renderHome(app) {
   const boxes = getBoxes();
   const tasks = getTasks();
+  const pointsSummary = getPointsSummary();
   const boxMap = new Map(boxes.map((box) => [box.id, box]));
   const now = new Date();
   const doneTasks = tasks.filter((task) => task.isCompleted);
@@ -140,6 +142,7 @@ export function renderHome(app) {
 
         <div class="hero-actions">
           <button class="btn subtle sw-entry-btn" id="smallWorldEntry">进入小世界</button>
+          <button class="btn subtle points-entry-btn" id="pointsEntry">积分 ${pointsSummary.balance}</button>
           <button class="btn subtle" id="heroFocusBtn">${focusBox ? `打开 ${escapeHtml(focusBox.name)}` : '查看任务盒'}</button>
         </div>
       </section>
@@ -209,6 +212,7 @@ export function renderHome(app) {
       fx.remove();
     }, 420);
   });
+  app.querySelector('#pointsEntry').addEventListener('click', () => navigate('#points'));
 
   app.querySelector('#heroFocusBtn').addEventListener('click', () => {
     if (focusBox) navigate(`#box/${focusBox.id}`);
@@ -229,6 +233,8 @@ async function openAIExtractSheetLazy() {
 }
 
 function openAddTaskSheet(boxes) {
+  const defaultBox = boxes[0] || null;
+  const defaultPoints = defaultBox ? getTaskPointValue({ boxId: defaultBox.id }, defaultBox) : 5;
   const { root, close } = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-content">
@@ -241,6 +247,7 @@ function openAddTaskSheet(boxes) {
           ${boxes.map((box) => `<option value="${box.id}">${escapeHtml(box.name)}</option>`).join('')}
         </select>
       </label>
+      <label>完成可得积分<input id="newTaskPoints" class="input" type="number" min="0" step="1" value="${defaultPoints}"></label>
       <div class="sheet-actions">
         <button class="btn" id="cancelTaskBtn">取消</button>
         <button class="btn primary" id="saveTaskBtn">保存任务</button>
@@ -248,15 +255,27 @@ function openAddTaskSheet(boxes) {
     </div>
   `, { height: '48vh' });
 
+  const boxSelect = root.querySelector('#newTaskBox');
+  const pointsInput = root.querySelector('#newTaskPoints');
+  pointsInput.addEventListener('input', () => {
+    pointsInput.dataset.touched = '1';
+  });
+  boxSelect.addEventListener('change', () => {
+    if (pointsInput.dataset.touched === '1') return;
+    const selectedBox = boxes.find((box) => box.id === boxSelect.value);
+    pointsInput.value = String(getTaskPointValue({ boxId: boxSelect.value }, selectedBox));
+  });
+
   root.querySelector('#cancelTaskBtn').addEventListener('click', close);
   root.querySelector('#saveTaskBtn').addEventListener('click', () => {
     const content = root.querySelector('#newTaskContent').value.trim();
     const boxId = root.querySelector('#newTaskBox').value;
+    const pointsValue = Math.max(0, Number(root.querySelector('#newTaskPoints').value) || 0);
     if (!content) {
       showToast('先输入任务内容');
       return;
     }
-    addTask({ content, boxId });
+    addTask({ content, boxId, pointsValue });
     close();
     renderHome(document.getElementById('app'));
   });
