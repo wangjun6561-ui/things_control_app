@@ -344,6 +344,7 @@ export const POINTS_SOURCE_FILTERS = [
   { id: 'task', label: '任务得分', sourceTypes: ['task_completion', 'task_completion_reversal', 'task_points_adjustment'] },
   { id: 'reward', label: '奖励兑换', sourceTypes: ['reward_redeem'] },
   { id: 'manual', label: '手动记账', sourceTypes: ['manual_adjustment'] },
+  { id: 'ai', label: 'AI识别', sourceTypes: ['ai_recognition'] },
   { id: 'history', label: '历史补录', sourceTypes: ['historical_balance'] },
 ];
 
@@ -375,6 +376,7 @@ export function recordPointsTransaction({
   bucket,
   sourceType = 'manual_adjustment',
   sourceKey = uid(),
+  createdAt = null,
 }) {
   const amount = Math.round(toNumber(delta, 0));
   if (!amount) return null;
@@ -388,6 +390,7 @@ export function recordPointsTransaction({
       bucket: bucket || (amount >= 0 ? 'earn' : 'spend'),
       sourceType,
       sourceKey,
+      createdAt: createdAt || nowIso(),
     });
     data.transactions.push(created);
     if (sourceType === 'historical_balance') data.meta.openingBalanceRecorded = true;

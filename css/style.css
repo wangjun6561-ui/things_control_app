@@ -2121,6 +2121,12 @@ select:focus {
   font-weight: 700;
 }
 
+.points-topbar-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
 .points-hero-actions {
   display: flex;
   gap: 8px;
@@ -2512,6 +2518,96 @@ select:focus {
   color: #b91c1c;
 }
 
+.points-ai-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.points-ai-runner {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.points-ai-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.points-ai-card {
+  border-radius: 24px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: var(--shadow-sm);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+:root[data-theme='dark'] .points-ai-card {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.points-ai-card.positive {
+  border-color: rgba(34, 197, 94, 0.22);
+}
+
+.points-ai-card.negative {
+  border-color: rgba(239, 68, 68, 0.18);
+}
+
+.points-ai-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.points-ai-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+}
+
+.points-ai-check input {
+  width: 18px;
+  height: 18px;
+}
+
+.points-ai-kind {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.points-ai-kind.positive {
+  background: rgba(34, 197, 94, 0.14);
+  color: #15803d;
+}
+
+.points-ai-kind.negative {
+  background: rgba(239, 68, 68, 0.14);
+  color: #b91c1c;
+}
+
+.points-ai-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.points-ai-result-actions {
+  margin-top: 14px;
+}
+
 .sw-result-actions {
   margin-top: 14px;
 }
@@ -2586,6 +2682,14 @@ select:focus {
 
   .points-confirm-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .points-ai-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .points-topbar-actions {
+    gap: 6px;
   }
 
   .points-transaction {

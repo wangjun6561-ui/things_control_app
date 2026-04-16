@@ -202,6 +202,17 @@ function rerenderWithState(app, state) {
   return renderPointsPage(app, state);
 }
 
+async function openPointsAiSheetLazy(app, viewState) {
+  try {
+    const { openPointsAiSheet } = await import('./points-ai.js');
+    openPointsAiSheet({
+      onDone: () => rerenderWithState(app, viewState),
+    });
+  } catch {
+    showToast('AI 识别模块加载失败');
+  }
+}
+
 export async function renderPointsPage(app, viewState = {}) {
   const filters = {
     bucket: viewState.bucket || 'all',
@@ -222,7 +233,10 @@ export async function renderPointsPage(app, viewState = {}) {
       <header class="topbar safe-top">
         <button class="icon-btn icon-btn-ghost" id="pointsBackBtn">←</button>
         <h2>积分</h2>
-        <button class="icon-btn icon-btn-ghost" id="pointsSettingsBtn" aria-label="积分设置">⚙</button>
+        <div class="points-topbar-actions">
+          <button class="icon-btn icon-btn-ghost" id="pointsAiTopBtn" aria-label="AI识别积分">✦</button>
+          <button class="icon-btn icon-btn-ghost" id="pointsSettingsBtn" aria-label="积分设置">⚙</button>
+        </div>
       </header>
 
       <section class="panel points-hero">
@@ -244,6 +258,7 @@ export async function renderPointsPage(app, viewState = {}) {
           <div class="points-hero-actions">
             <button class="btn subtle compact" id="pointsHistoryBtn">${summary.openingBalanceRecorded ? '继续补录' : '补录历史积分'}</button>
             <button class="btn subtle compact" id="pointsManualBtn">手动记一笔</button>
+            <button class="btn subtle compact" id="pointsAiEntryBtn">✦ AI识别</button>
           </div>
         </div>
 
@@ -327,12 +342,18 @@ export async function renderPointsPage(app, viewState = {}) {
   `;
 
   app.querySelector('#pointsBackBtn').addEventListener('click', () => navigate('#home'));
+  app.querySelector('#pointsAiTopBtn').addEventListener('click', () => {
+    openPointsAiSheetLazy(app, filters);
+  });
   app.querySelector('#pointsSettingsBtn').addEventListener('click', () => navigate('#settings'));
   app.querySelector('#pointsHistoryBtn').addEventListener('click', () => {
     openHistoricalSheet(() => rerenderWithState(app, filters));
   });
   app.querySelector('#pointsManualBtn').addEventListener('click', () => {
     openManualTransactionSheet(() => rerenderWithState(app, filters));
+  });
+  app.querySelector('#pointsAiEntryBtn').addEventListener('click', () => {
+    openPointsAiSheetLazy(app, filters);
   });
   app.querySelector('#manageRewardsBtn').addEventListener('click', () => {
     openRewardManagerSheet({ app, viewState: filters });
