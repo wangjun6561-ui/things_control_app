@@ -116,7 +116,7 @@ function route() {
     const load = ROUTE_MODULE_CACHE.points || import('./points-page.js');
     ROUTE_MODULE_CACHE.points = load;
     load.then(({ renderPointsPage }) => {
-      renderPointsPage(app).then(() => requestAnimationFrame(resetViewPosition));
+      renderPointsPage(app, { refreshRemote: true }).then(() => requestAnimationFrame(resetViewPosition));
     });
     return;
   }
@@ -187,7 +187,10 @@ function warmupCriticalModules() {
       .catch(() => {});
 
     import('./points-store.js')
-      .then(({ prewarmPointsData }) => prewarmPointsData?.())
+      .then(async ({ prewarmPointsData }) => {
+        await prewarmPointsData?.({ forceSource: true });
+        if ((location.hash || '#home') === '#home') renderHome(app);
+      })
       .catch(() => {});
 
     import('./ai-extract.js').catch(() => {});

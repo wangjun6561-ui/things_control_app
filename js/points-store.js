@@ -42,6 +42,7 @@ const DEFAULT_POINTS_TEMPLATE = {
     dirty: false,
   },
 };
+let pointsSyncTimer = null;
 
 function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -208,6 +209,19 @@ async function fetchSource(url) {
   return normalized;
 }
 
+function parseGistRawUrl(url) {
+  const match = String(url || '').match(/gist\.githubusercontent\.com\/[^/]+\/([a-f0-9]+)\/raw\/[^/]+\/(.+)$/i);
+  if (!match) return null;
+  return { gistId: match[1], filename: decodeURIComponent(match[2]) };
+}
+
+function schedulePointsCloudPush() {
+  clearTimeout(pointsSyncTimer);
+  pointsSyncTimer = setTimeout(() => {
+    pushPointsToCloud().catch(() => {});
+  }, 700);
+}
+
 export function getPointsSourceUrl() {
   const settings = readTaskboxSettings();
   return String(settings.pointsDataUrl || '').trim() || DEFAULT_POINTS_URL;
@@ -217,29 +231,95 @@ export function getPointsDataSync() {
   return readCache() || createFallbackPointsData();
 }
 
+export async function pushPointsToCloud(options = {}) {
+  const { force = false } = options;
+  const pointsData = getPointsDataSync();
+  const settings = readTaskboxSettings();
+  const sourceUrl = getPointsSourceUrl();
+  const token = String(settings.githubToken || '').trim();
+  const parsed = parseGistRawUrl(sourceUrl);
+  const syncedPayload = normalizePointsData({
+    ...pointsData,
+    meta: {
+      ...pointsData.meta,
+      sourceUrl,
+      lastLoadedAt: nowIso(),
+      dirty: false,
+    },
+  });
+
+  if (!parsed || !token) return false;
+  if (!force && !pointsData.meta.dirty) return false;
+
+  const response = await fetch(`https://api.github.com/gists/${parsed.gistId}`, {
+    method: 'PATCH',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      files: {
+        [parsed.filename]: {
+          content: JSON.stringify(syncedPayload, null, 2),
+        },
+      },
+    }),
+  });
+  if (!response.ok) throw new Error('points_gist_patch_failed');
+
+  return writeCache(syncedPayload, { dirty: false });
+}
+
+export async function pullPointsFromCloud() {
+  let cached = readCache();
+  const url = getPointsSourceUrl();
+  const sourceChanged = cached && String(cached.meta?.sourceUrl || '').trim() !== url;
+
+  if (cached?.meta?.dirty && !sourceChanged) {
+    try {
+      const synced = await pushPointsToCloud({ force: true });
+      if (!synced) return { status: 'dirty-cache', data: cached };
+      cached = readCache() || cached;
+    } catch {
+      return { status: 'dirty-cache', data: cached };
+    }
+  }
+
+  try {
+    const seeded = await fetchSource(url);
+    return {
+      status: 'remote',
+      data: writeCache(seeded, { dirty: false }),
+    };
+  } catch {
+    return {
+      status: cached ? 'cached' : 'fallback',
+      data: cached || writeCache(createFallbackPointsData(), { dirty: false }),
+    };
+  }
+}
+
 export async function ensurePointsData({ forceSource = false } = {}) {
   const cached = readCache();
   const url = getPointsSourceUrl();
   const sourceChanged = cached && String(cached.meta?.sourceUrl || '').trim() !== url;
   if (cached && !forceSource && !sourceChanged) return cached;
 
-  try {
-    const seeded = await fetchSource(url);
-    return writeCache(seeded, { dirty: false });
-  } catch {
-    if (cached) return cached;
-    return writeCache(createFallbackPointsData(), { dirty: false });
-  }
+  const result = await pullPointsFromCloud();
+  return result.data;
 }
 
-export function prewarmPointsData() {
-  return ensurePointsData().catch(() => {});
+export function prewarmPointsData(options = {}) {
+  return ensurePointsData(options).catch(() => {});
 }
 
 function updatePointsData(updater) {
   const current = getPointsDataSync();
   const next = updater(structuredClone(current)) || current;
-  return writeCache(next, { dirty: true });
+  const saved = writeCache(next, { dirty: true });
+  schedulePointsCloudPush();
+  return saved;
 }
 
 function createTransaction(payload) {

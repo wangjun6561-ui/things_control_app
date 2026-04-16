@@ -9,6 +9,7 @@ import {
   getPointsSummary,
   getRewardCatalog,
   getRewardPool,
+  pullPointsFromCloud,
   recordHistoricalBalance,
   recordPointsTransaction,
   redeemReward,
@@ -199,7 +200,7 @@ function getLedgerEmptyCopy(filters) {
 }
 
 function rerenderWithState(app, state) {
-  return renderPointsPage(app, state);
+  return renderPointsPage(app, { ...state, refreshRemote: false });
 }
 
 async function openPointsAiSheetLazy(app, viewState) {
@@ -213,12 +214,28 @@ async function openPointsAiSheetLazy(app, viewState) {
   }
 }
 
+function getPointsPullMessage(status) {
+  if (status === 'remote') return '已拉取最新积分账本';
+  if (status === 'dirty-cache') return '本地有未同步改动，已优先保留本地账本';
+  return '云端拉取失败，已使用本地缓存';
+}
+
+async function refreshPointsFromCloud(app, viewState, { showFeedback = true } = {}) {
+  const result = await pullPointsFromCloud();
+  if (showFeedback) showToast(getPointsPullMessage(result.status));
+  await rerenderWithState(app, viewState);
+  return result;
+}
+
 export async function renderPointsPage(app, viewState = {}) {
   const filters = {
     bucket: viewState.bucket || 'all',
     source: viewState.source || 'all',
   };
-  const pointsData = await ensurePointsData();
+  const shouldRefreshRemote = Boolean(viewState.refreshRemote);
+  const pointsData = shouldRefreshRemote
+    ? (await pullPointsFromCloud()).data
+    : await ensurePointsData();
   const summary = getPointsSummary(pointsData);
   const pointPresets = getPointPresets(pointsData);
   const milestoneBonuses = getMilestoneBonuses(pointsData);
@@ -234,6 +251,7 @@ export async function renderPointsPage(app, viewState = {}) {
         <button class="icon-btn icon-btn-ghost" id="pointsBackBtn">←</button>
         <h2>积分</h2>
         <div class="points-topbar-actions">
+          <button class="icon-btn icon-btn-ghost" id="pointsPullBtn" aria-label="拉取积分账本">↻</button>
           <button class="icon-btn icon-btn-ghost" id="pointsAiTopBtn" aria-label="AI识别积分">✦</button>
           <button class="icon-btn icon-btn-ghost" id="pointsSettingsBtn" aria-label="积分设置">⚙</button>
         </div>
@@ -244,7 +262,7 @@ export async function renderPointsPage(app, viewState = {}) {
           <div>
             <p class="eyebrow">Points System</p>
             <h1>把奖励和克制都记进账本</h1>
-            <p class="panel-note">积分只跟已完成行为绑定，消费只通过兑换发生。这样每一分都能追溯。</p>
+            <p class="panel-note">进入页面会默认拉一次远端账本；本地改动会自动尝试同步到 Gist。</p>
           </div>
           <span class="points-source-badge">${escapeHtml(getSourceLabel(pointsData))}</span>
         </div>
@@ -342,6 +360,9 @@ export async function renderPointsPage(app, viewState = {}) {
   `;
 
   app.querySelector('#pointsBackBtn').addEventListener('click', () => navigate('#home'));
+  app.querySelector('#pointsPullBtn').addEventListener('click', async () => {
+    await refreshPointsFromCloud(app, filters);
+  });
   app.querySelector('#pointsAiTopBtn').addEventListener('click', () => {
     openPointsAiSheetLazy(app, filters);
   });
