@@ -1,4 +1,4 @@
-const CACHE_NAME = 'taskbox-v3';
+const CACHE_NAME = 'taskbox-v4';
 const CACHE_FILES = [
   './',
   './index.html',

@@ -120,6 +120,7 @@ export function renderHome(app) {
             <p class="hero-subtitle">把任务拆进盒子，按场景推进，每次只盯住下一件事。</p>
           </div>
           <div class="row gap8 hero-tools">
+            <button class="icon-btn icon-btn-ghost" id="homePullBtn" aria-label="拉取盒子数据">↻</button>
             <button class="icon-btn icon-btn-ghost" id="aiTopBtn" aria-label="AI提取">✦</button>
             <button class="icon-btn icon-btn-ghost" id="settingsBtn" aria-label="设置">⚙</button>
           </div>
@@ -143,7 +144,6 @@ export function renderHome(app) {
         <div class="hero-actions">
           <button class="btn subtle sw-entry-btn" id="smallWorldEntry">进入小世界</button>
           <button class="btn subtle points-entry-btn" id="pointsEntry">积分 ${pointsSummary.balance}</button>
-          <button class="btn subtle sync-entry-btn" id="homePullBtn">↻ 拉取盒子数据</button>
           <button class="btn subtle" id="heroFocusBtn">${focusBox ? `打开 ${escapeHtml(focusBox.name)}` : '查看任务盒'}</button>
         </div>
       </section>

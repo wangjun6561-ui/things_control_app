@@ -1,5 +1,6 @@
 import { getSettings, setSettings, exportData, importData, pushDataToCloud, pullDataFromCloud, exportDailySummary } from './db.js';
 import { navigate, showToast } from './app.js';
+import { getPointsSyncState, pullPointsFromCloud } from './points-store.js';
 
 function escapeHtml(value = '') {
   return String(value)
@@ -12,6 +13,7 @@ function escapeHtml(value = '') {
 
 export function renderSettings(app) {
   const settings = getSettings();
+  const pointsSyncState = getPointsSyncState();
 
   app.innerHTML = `
     <main id="settings" class="page settings-page">
@@ -110,11 +112,20 @@ export function renderSettings(app) {
             <p class="eyebrow">Data</p>
             <h3>积分账本</h3>
           </div>
-          <p class="panel-note">现在默认读取你的 GitHub Gist Raw 链接；如果后面换地址，也可以直接在这里改。</p>
+          <p class="panel-note">${escapeHtml(
+            pointsSyncState.autoPushEnabled
+              ? '当前默认读取你配置的 Gist Raw 链接，本地改动会自动同步。'
+              : pointsSyncState.isGistSource
+                ? '当前默认读取你配置的 Gist Raw 链接；要自动同步，请先填写 GitHub Token。'
+                : '当前可以在这里配置积分账本的远端 JSON 地址。'
+          )}</p>
         </div>
         <label>积分 JSON URL（可留空）
           <input id="pointsDataUrl" class="input" value="${escapeHtml(settings.pointsDataUrl || '')}" placeholder="https://gist.githubusercontent.com/.../mock-points.json">
         </label>
+        <div class="action-grid">
+          <button class="btn" id="pullPointsBtn">拉取云端账本</button>
+        </div>
       </section>
 
       <section class="panel">
@@ -171,6 +182,16 @@ export function renderSettings(app) {
   });
   app.querySelector('#pointsDataUrl').addEventListener('input', (event) => {
     setSettings({ pointsDataUrl: event.target.value.trim() });
+  });
+  app.querySelector('#pullPointsBtn').addEventListener('click', async () => {
+    try {
+      const result = await pullPointsFromCloud();
+      if (result.status === 'remote') showToast('已拉取最新积分账本');
+      else if (result.status === 'dirty-cache') showToast('本地有未同步改动，已优先保留本地账本');
+      else showToast('云端拉取失败，已使用本地缓存');
+    } catch {
+      showToast('积分账本拉取失败，请检查链接或网络');
+    }
   });
 
   const syncCloudSettings = () => {
