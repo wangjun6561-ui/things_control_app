@@ -13,7 +13,7 @@ export function showToast(msg) {
 
 export function checkOnline() {
   if (!navigator.onLine) {
-    showToast('当前无网络，AI 提取需要联网使用');
+    showToast('Offline. AI needs network.');
     return false;
   }
   return true;
@@ -47,12 +47,12 @@ export function openSheet(contentHtml, { height = '70vh', onClose } = {}) {
 
   let startY = 0;
   let moved = 0;
-  sheet.addEventListener('touchstart', (e) => {
-    startY = e.touches[0].clientY;
+  sheet.addEventListener('touchstart', (event) => {
+    startY = event.touches[0].clientY;
     moved = 0;
   }, { passive: true });
-  sheet.addEventListener('touchmove', (e) => {
-    moved = e.touches[0].clientY - startY;
+  sheet.addEventListener('touchmove', (event) => {
+    moved = event.touches[0].clientY - startY;
     if (moved > 0) sheet.style.transform = `translateY(${Math.min(moved, 120)}px)`;
   }, { passive: true });
   sheet.addEventListener('touchend', () => {
@@ -80,8 +80,8 @@ function resetViewPosition() {
   document.documentElement.scrollTop = 0;
   document.body.scrollTop = 0;
   app.scrollTop = 0;
-  document.querySelectorAll('.scroll-area').forEach((el) => {
-    el.scrollTop = 0;
+  document.querySelectorAll('.scroll-area').forEach((element) => {
+    element.scrollTop = 0;
   });
 }
 
@@ -89,11 +89,13 @@ function route() {
   applyTheme();
   const parts = (location.hash || '#home').replace('#', '').split('/').filter(Boolean);
   const [path, param, subParam] = parts;
+
   if (path === 'home') {
     renderHome(app);
     requestAnimationFrame(resetViewPosition);
     return;
   }
+
   if (path === 'box') {
     const load = ROUTE_MODULE_CACHE.box || import('./box-detail.js');
     ROUTE_MODULE_CACHE.box = load;
@@ -103,6 +105,7 @@ function route() {
     });
     return;
   }
+
   if (path === 'settings') {
     const load = ROUTE_MODULE_CACHE.settings || import('./settings.js');
     ROUTE_MODULE_CACHE.settings = load;
@@ -112,6 +115,7 @@ function route() {
     });
     return;
   }
+
   if (path === 'points') {
     const load = ROUTE_MODULE_CACHE.points || import('./points-page.js');
     ROUTE_MODULE_CACHE.points = load;
@@ -120,6 +124,7 @@ function route() {
     });
     return;
   }
+
   if (path === 'smallworld' || path === 'sw-settings' || (path === 'sw' && (param === 'pavilion' || param === 'tower') && subParam)) {
     const load = ROUTE_MODULE_CACHE.smallworld || import('./small-world.js');
     ROUTE_MODULE_CACHE.smallworld = load;
@@ -134,13 +139,16 @@ function route() {
         requestAnimationFrame(resetViewPosition);
         return;
       }
-      renderSmallWorldFloor(app, param, subParam).catch(() => {
-        showToast('楼层数据加载失败');
-        location.hash = '#smallworld';
-      }).then(() => requestAnimationFrame(resetViewPosition));
+      renderSmallWorldFloor(app, param, subParam)
+        .catch(() => {
+          showToast('Floor data failed to load');
+          location.hash = '#smallworld';
+        })
+        .then(() => requestAnimationFrame(resetViewPosition));
     });
     return;
   }
+
   location.hash = '#home';
 }
 
@@ -181,10 +189,13 @@ function setupKeyboardInsets() {
   update();
 }
 
-async function tryCloudPull() {
+async function tryCloudPullAndRefresh() {
   try {
     const result = await pullDataFromCloud();
-    if (result === 'merged') showToast('已自动合并云端数据');
+    if (result === 'merged') {
+      route();
+      showToast('Cloud synced');
+    }
   } catch {
     // no-op
   }
@@ -222,7 +233,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   registerServiceWorker();
   route();
   warmupCriticalModules();
-  tryCloudPull();
+  tryCloudPullAndRefresh();
 });
 
 window.TaskBoxApp = {

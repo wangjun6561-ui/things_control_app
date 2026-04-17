@@ -44,6 +44,10 @@ const DEFAULT_POINTS_TEMPLATE = {
 };
 let pointsSyncTimer = null;
 
+function showPointsSyncToast(message) {
+  window.TaskBoxApp?.showToast?.(message);
+}
+
 function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -199,6 +203,12 @@ function createFallbackPointsData() {
 }
 
 async function fetchSource(url) {
+  const settings = readTaskboxSettings();
+  const gist = parseGistRawUrl(url);
+  if (gist) {
+    return fetchLatestGistSource(gist, url, String(settings.githubToken || '').trim());
+  }
+
   const response = await fetch(url, { cache: 'no-store' });
   if (!response.ok) throw new Error('points_fetch_failed');
   const payload = await response.json();
@@ -213,6 +223,38 @@ function parseGistRawUrl(url) {
   const match = String(url || '').match(/gist\.githubusercontent\.com\/[^/]+\/([a-f0-9]+)\/raw\/[^/]+\/(.+)$/i);
   if (!match) return null;
   return { gistId: match[1], filename: decodeURIComponent(match[2]) };
+}
+
+async function fetchLatestGistSource(parsed, url, token = '') {
+  const headers = {
+    Accept: 'application/vnd.github+json',
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`https://api.github.com/gists/${parsed.gistId}`, {
+    method: 'GET',
+    headers,
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('points_gist_fetch_failed');
+
+  const payload = await response.json();
+  const file = payload?.files?.[parsed.filename];
+  if (!file) throw new Error('points_gist_file_missing');
+
+  let content = file.content;
+  if (!content && file.raw_url) {
+    const rawResponse = await fetch(file.raw_url, { cache: 'no-store' });
+    if (!rawResponse.ok) throw new Error('points_gist_raw_fetch_failed');
+    content = await rawResponse.text();
+  }
+  if (!content) throw new Error('points_gist_empty');
+
+  const normalized = normalizePointsData(JSON.parse(content));
+  normalized.meta.sourceUrl = url;
+  normalized.meta.lastLoadedAt = nowIso();
+  normalized.meta.dirty = false;
+  return normalized;
 }
 
 function schedulePointsCloudPush() {
@@ -245,7 +287,7 @@ export function getPointsDataSync() {
 }
 
 export async function pushPointsToCloud(options = {}) {
-  const { force = false } = options;
+  const { force = false, silent = false } = options;
   const pointsData = getPointsDataSync();
   const settings = readTaskboxSettings();
   const sourceUrl = getPointsSourceUrl();
@@ -280,8 +322,9 @@ export async function pushPointsToCloud(options = {}) {
     }),
   });
   if (!response.ok) throw new Error('points_gist_patch_failed');
-
-  return writeCache(syncedPayload, { dirty: false });
+  const saved = writeCache(syncedPayload, { dirty: false });
+  if (!silent) showPointsSyncToast('☁️已更新');
+  return saved;
 }
 
 export async function pullPointsFromCloud() {
