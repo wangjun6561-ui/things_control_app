@@ -2,9 +2,9 @@ const STORAGE_KEY = 'taskbox_data';
 
 const DEFAULT_BOXES = [
   { name: '重要盒', color: 'important', icon: '⭐', sortOrder: 0, isDefault: true, description: '放这里的，都是不做会后悔的事。别拖了，一件一件来。' },
-  { name: '放松盒', color: 'relax', icon: '☕', sortOrder: 1, isDefault: true, description: '累了就来这里抽一个，给自己一个正当的休息理由。' },
-  { name: '奖励盒', color: 'reward', icon: '🎁', sortOrder: 2, isDefault: true, description: '完成了重要任务？来这里随机抽一个奖励犒劳自己吧。' },
-  { name: '待办盒', color: 'misc', icon: '📦', sortOrder: 3, isDefault: true, description: '想到就记，统一处理，减少脑内占用。' },
+  { name: '待办盒', color: 'misc', icon: '📦', sortOrder: 1, isDefault: true, description: '想到就记，统一处理，减少脑内占用。' },
+  { name: '放松盒', color: 'relax', icon: '☕', sortOrder: 2, isDefault: true, description: '累了就来这里抽一个，给自己一个正当的休息理由。' },
+  { name: '奖励盒', color: 'reward', icon: '🎁', sortOrder: 3, isDefault: true, description: '完成了重要任务？来这里随机抽一个奖励犒劳自己吧。' },
   { name: '惩罚盒', color: 'punish', icon: '⚡', sortOrder: 4, isDefault: true, description: '没完成计划？随机抽一个惩罚，对自己狠一点才能进步。' },
   { name: '碎片学习盒', color: 'study', icon: '🧩', sortOrder: 5, isDefault: true, description: '碎片时间学习清单，想到就看。' },
   { name: '健康盒', color: 'health', icon: '💪', sortOrder: 6, isDefault: true, description: '每天一点点，练身体、稳心态。' },
@@ -20,7 +20,7 @@ const DEFAULT_TASKS = [
 
   { boxName: '惩罚盒', content: '复盘 1k 字' },
   { boxName: '惩罚盒', content: '输出主题文章 2k 字' },
-  { boxName: '惩罚盒', content: '手写笔记整理 30min' }
+  { boxName: '惩罚盒', content: '手写笔记整理 30min' },
 
   { boxName: '碎片学习盒', content: '生财有术中标' },
   { boxName: '碎片学习盒', content: '生财有术亦仁收藏夹' },
@@ -47,7 +47,7 @@ function normalize(data = {}) {
   return {
     boxes: (Array.isArray(data.boxes) ? data.boxes : []).map((b) => {
       const renamed = b.name === '杂事盒' ? '待办盒' : (b.name === '重要事项' ? '重要盒' : b.name);
-      const orderMap = { '重要盒': 0, '放松盒': 1, '奖励盒': 2, '待办盒': 3, '惩罚盒': 4, '碎片学习盒': 5, '健康盒': 6 };
+      const orderMap = { '重要盒': 0, '待办盒': 1, '放松盒': 2, '奖励盒': 3, '惩罚盒': 4, '碎片学习盒': 5, '健康盒': 6 };
       return { ...b, name: renamed, sortOrder: orderMap[renamed] ?? b.sortOrder ?? 99, color: b.color || BOX_COLOR_POOL[orderMap[renamed] ?? 0] };
     }),
     tasks: (Array.isArray(data.tasks) ? data.tasks : []).map((t) => ({

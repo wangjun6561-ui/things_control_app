@@ -1,4 +1,4 @@
-import { getBoxes, getTasks, addTask, addBox } from './db.js';
+import { getBoxes, getTasks, addTask, addBox, pullDataFromCloud } from './db.js';
 import { navigate, openSheet, showToast } from './app.js';
 import { getPointsSummary, getTaskPointValue } from './points-store.js';
 
@@ -143,6 +143,7 @@ export function renderHome(app) {
         <div class="hero-actions">
           <button class="btn subtle sw-entry-btn" id="smallWorldEntry">进入小世界</button>
           <button class="btn subtle points-entry-btn" id="pointsEntry">积分 ${pointsSummary.balance}</button>
+          <button class="btn subtle sync-entry-btn" id="homePullBtn">↻ 拉取盒子数据</button>
           <button class="btn subtle" id="heroFocusBtn">${focusBox ? `打开 ${escapeHtml(focusBox.name)}` : '查看任务盒'}</button>
         </div>
       </section>
@@ -213,6 +214,15 @@ export function renderHome(app) {
     }, 420);
   });
   app.querySelector('#pointsEntry').addEventListener('click', () => navigate('#points'));
+  app.querySelector('#homePullBtn').addEventListener('click', async () => {
+    try {
+      const result = await pullDataFromCloud({ force: true });
+      showToast(result === 'merged' ? '已拉取最新盒子数据' : '本地已是最新');
+      renderHome(app);
+    } catch {
+      showToast('盒子数据拉取失败，请检查云端配置');
+    }
+  });
 
   app.querySelector('#heroFocusBtn').addEventListener('click', () => {
     if (focusBox) navigate(`#box/${focusBox.id}`);

@@ -1543,6 +1543,15 @@ select:focus {
   box-shadow: 0 14px 26px rgba(245, 158, 11, 0.24);
 }
 
+.sync-entry-btn,
+.hero-actions .sync-entry-btn,
+.points-hero-actions .sync-entry-btn {
+  background: linear-gradient(135deg, #0f9f7a 0%, #2a7fff 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 14px 26px rgba(42, 127, 255, 0.2);
+}
+
 .sw-lightflow {
   position: absolute;
   inset: 0;
@@ -2124,7 +2133,15 @@ select:focus {
 .points-topbar-actions {
   display: flex;
   gap: 8px;
-  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.points-topbar-main {
+  min-width: 0;
+}
+
+.points-topbar-main h2 {
+  white-space: nowrap;
 }
 
 .points-hero-actions {

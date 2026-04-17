@@ -260,9 +260,11 @@ export async function renderPointsPage(app, viewState = {}) {
   app.innerHTML = `
     <main class="page points-page" id="points-page">
       <header class="topbar safe-top">
-        <button class="icon-btn icon-btn-ghost" id="pointsBackBtn">←</button>
-        <h2>积分</h2>
-        <div class="points-topbar-actions">
+        <div class="row gap8 center points-topbar-main">
+          <button class="icon-btn icon-btn-ghost" id="pointsBackBtn">←</button>
+          <h2>积分</h2>
+        </div>
+        <div class="row gap8 hero-tools points-topbar-actions">
           <button class="icon-btn icon-btn-ghost" id="pointsPullBtn" aria-label="拉取积分账本">↻</button>
           <button class="icon-btn icon-btn-ghost" id="pointsAiTopBtn" aria-label="AI识别积分">✦</button>
           <button class="icon-btn icon-btn-ghost" id="pointsSettingsBtn" aria-label="积分设置">⚙</button>
@@ -286,7 +288,7 @@ export async function renderPointsPage(app, viewState = {}) {
             <span class="points-balance-unit">${escapeHtml(pointsData.account.unit || '分')}</span>
           </div>
           <div class="points-hero-actions">
-            <button class="btn subtle compact" id="pointsPullEntryBtn">↻ 拉取云端</button>
+            <button class="btn subtle compact sync-entry-btn" id="pointsPullEntryBtn">↻ 拉取云端账本</button>
             <button class="btn subtle compact" id="pointsHistoryBtn">${summary.openingBalanceRecorded ? '继续补录' : '补录历史积分'}</button>
             <button class="btn subtle compact" id="pointsManualBtn">手动记一笔</button>
             <button class="btn subtle compact" id="pointsAiEntryBtn">✦ AI识别</button>
