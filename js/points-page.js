@@ -58,12 +58,12 @@ function getSourceLabel(pointsData) {
 
 function getSyncNote(syncState) {
   if (syncState.autoPushEnabled) {
-    return '进入页面会默认拉一次远端账本；本地改动会自动同步到 Gist。手动拉取入口放在设置页。';
+    return '进入页面会默认拉一次远端账本；本地改动会自动同步到 Gist。手动拉取入口也放在右上角。';
   }
   if (syncState.isGistSource) {
-    return '进入页面会默认拉一次远端账本；要自动上传，请先在小世界设置里填写 GitHub Token。手动拉取入口放在设置页。';
+    return '进入页面会默认拉一次远端账本；要自动上传，请先在小世界设置里填写 GitHub Token。手动拉取入口也放在右上角。';
   }
-  return '当前积分源不是 Gist Raw 链接，本地改动暂时只会保存在本地缓存。手动拉取入口放在设置页。';
+  return '当前积分源不是 Gist Raw 链接，本地改动暂时只会保存在本地缓存。手动拉取入口也放在右上角。';
 }
 
 function groupRewardsByCategory(rewards = []) {
@@ -225,6 +225,19 @@ async function openPointsAiSheetLazy(app, viewState) {
   }
 }
 
+function getPointsPullMessage(status) {
+  if (status === 'remote') return '已拉取最新积分账本';
+  if (status === 'dirty-cache') return '本地有未同步改动，已优先保留本地账本';
+  return '云端拉取失败，已使用本地缓存';
+}
+
+async function refreshPointsFromCloud(app, viewState, { showFeedback = true } = {}) {
+  const result = await pullPointsFromCloud();
+  if (showFeedback) showToast(getPointsPullMessage(result.status));
+  await rerenderWithState(app, viewState);
+  return result;
+}
+
 export async function renderPointsPage(app, viewState = {}) {
   const filters = {
     bucket: viewState.bucket || 'all',
@@ -252,6 +265,7 @@ export async function renderPointsPage(app, viewState = {}) {
           <h2>积分</h2>
         </div>
         <div class="row gap8 hero-tools points-topbar-actions">
+          <button class="icon-btn icon-btn-ghost" id="pointsPullBtn" aria-label="拉取积分账本">↻</button>
           <button class="icon-btn icon-btn-ghost" id="pointsAiTopBtn" aria-label="AI识别积分">✦</button>
           <button class="icon-btn icon-btn-ghost" id="pointsSettingsBtn" aria-label="积分设置">⚙</button>
         </div>
@@ -360,6 +374,9 @@ export async function renderPointsPage(app, viewState = {}) {
   `;
 
   app.querySelector('#pointsBackBtn').addEventListener('click', () => navigate('#home'));
+  app.querySelector('#pointsPullBtn').addEventListener('click', async () => {
+    await refreshPointsFromCloud(app, filters);
+  });
   app.querySelector('#pointsAiTopBtn').addEventListener('click', () => {
     openPointsAiSheetLazy(app, filters);
   });
