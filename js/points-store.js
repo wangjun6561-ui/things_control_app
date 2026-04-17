@@ -227,6 +227,19 @@ export function getPointsSourceUrl() {
   return String(settings.pointsDataUrl || '').trim() || DEFAULT_POINTS_URL;
 }
 
+export function getPointsSyncState() {
+  const settings = readTaskboxSettings();
+  const sourceUrl = getPointsSourceUrl();
+  const hasToken = Boolean(String(settings.githubToken || '').trim());
+  const isGistSource = Boolean(parseGistRawUrl(sourceUrl));
+  return {
+    sourceUrl,
+    hasToken,
+    isGistSource,
+    autoPushEnabled: Boolean(isGistSource && hasToken),
+  };
+}
+
 export function getPointsDataSync() {
   return readCache() || createFallbackPointsData();
 }

@@ -7,6 +7,7 @@ import {
   getPointsSourceUrl,
   POINTS_SOURCE_FILTERS,
   getPointsSummary,
+  getPointsSyncState,
   getRewardCatalog,
   getRewardPool,
   pullPointsFromCloud,
@@ -53,6 +54,16 @@ function getSourceLabel(pointsData) {
   if (!url) return '本地 mock JSON';
   if (!/^https?:/i.test(url) && (url.endsWith('mock-points.json') || url.endsWith('data/mock-points.json'))) return '本地 mock JSON';
   return '自定义 JSON';
+}
+
+function getSyncNote(syncState) {
+  if (syncState.autoPushEnabled) {
+    return '进入页面会默认拉一次远端账本；本地改动会自动同步到 Gist。';
+  }
+  if (syncState.isGistSource) {
+    return '进入页面会默认拉一次远端账本；要自动上传，请先在小世界设置里填写 GitHub Token。';
+  }
+  return '当前积分源不是 Gist Raw 链接，本地改动暂时只会保存在本地缓存。';
 }
 
 function groupRewardsByCategory(rewards = []) {
@@ -242,6 +253,7 @@ export async function renderPointsPage(app, viewState = {}) {
   const rewards = getRewardCatalog(pointsData);
   const rewardPool = getRewardPool(pointsData, { includeInactive: true });
   const transactions = getFilteredTransactions({ limit: 80, bucket: filters.bucket, source: filters.source }, pointsData);
+  const syncState = getPointsSyncState();
   const balance = summary.balance;
   const emptyCopy = getLedgerEmptyCopy(filters);
 
@@ -262,7 +274,7 @@ export async function renderPointsPage(app, viewState = {}) {
           <div>
             <p class="eyebrow">Points System</p>
             <h1>把奖励和克制都记进账本</h1>
-            <p class="panel-note">进入页面会默认拉一次远端账本；本地改动会自动尝试同步到 Gist。</p>
+            <p class="panel-note">${escapeHtml(getSyncNote(syncState))}</p>
           </div>
           <span class="points-source-badge">${escapeHtml(getSourceLabel(pointsData))}</span>
         </div>
@@ -274,6 +286,7 @@ export async function renderPointsPage(app, viewState = {}) {
             <span class="points-balance-unit">${escapeHtml(pointsData.account.unit || '分')}</span>
           </div>
           <div class="points-hero-actions">
+            <button class="btn subtle compact" id="pointsPullEntryBtn">↻ 拉取云端</button>
             <button class="btn subtle compact" id="pointsHistoryBtn">${summary.openingBalanceRecorded ? '继续补录' : '补录历史积分'}</button>
             <button class="btn subtle compact" id="pointsManualBtn">手动记一笔</button>
             <button class="btn subtle compact" id="pointsAiEntryBtn">✦ AI识别</button>
@@ -361,6 +374,9 @@ export async function renderPointsPage(app, viewState = {}) {
 
   app.querySelector('#pointsBackBtn').addEventListener('click', () => navigate('#home'));
   app.querySelector('#pointsPullBtn').addEventListener('click', async () => {
+    await refreshPointsFromCloud(app, filters);
+  });
+  app.querySelector('#pointsPullEntryBtn').addEventListener('click', async () => {
     await refreshPointsFromCloud(app, filters);
   });
   app.querySelector('#pointsAiTopBtn').addEventListener('click', () => {

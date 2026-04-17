@@ -145,7 +145,18 @@ function route() {
 }
 
 function registerServiceWorker() {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch(() => {});
+  if (!('serviceWorker' in navigator)) return;
+
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+
+  navigator.serviceWorker.register('service-worker.js')
+    .then((registration) => registration.update().catch(() => {}))
+    .catch(() => {});
 }
 
 function setupAudioUnlock() {
