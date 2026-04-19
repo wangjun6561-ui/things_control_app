@@ -24,6 +24,7 @@ const BUCKET_FILTERS = [
   { id: 'spend', label: '支出' },
   { id: 'adjust', label: '调整' },
 ];
+const SHEET_CLOSE_DELAY_MS = 240;
 
 function escapeHtml(value = '') {
   return String(value)
@@ -212,6 +213,13 @@ function getLedgerEmptyCopy(filters) {
 
 function rerenderWithState(app, state) {
   return renderPointsPage(app, { ...state, refreshRemote: false });
+}
+
+function openNextSheetAfterClose(close, callback) {
+  close();
+  setTimeout(() => {
+    callback?.();
+  }, SHEET_CLOSE_DELAY_MS);
 }
 
 async function openPointsAiSheetLazy(app, viewState) {
@@ -516,6 +524,9 @@ function openRewardManagerSheet({ app, viewState }) {
       <p class="eyebrow">Reward Pool</p>
       <h3>管理奖励池</h3>
       <p class="sheet-lead">奖励现在可以在系统里本地维护，先把清单跑起来，后面再切到 Gist 同步。</p>
+      <div class="sheet-actions">
+        <button class="btn primary" id="rewardAddBtn">Add Reward</button>
+      </div>
       <section class="points-manage-groups">
         ${rewards.length
           ? renderRewardManagerGroups(rewards)
@@ -535,16 +546,20 @@ function openRewardManagerSheet({ app, viewState }) {
   `, { height: '82vh' });
 
   root.querySelector('#rewardCloseBtn').addEventListener('click', close);
-  root.querySelector('#rewardAddBtn').addEventListener('click', () => {
-    close();
-    openRewardEditorSheet({ app, viewState, reopenManager: true });
+  root.querySelectorAll('#rewardAddBtn').forEach((button) => {
+    button.addEventListener('click', () => {
+      openNextSheetAfterClose(close, () => {
+        openRewardEditorSheet({ app, viewState, reopenManager: true });
+      });
+    });
   });
 
   root.querySelectorAll('[data-edit-reward]').forEach((button) => {
     button.addEventListener('click', () => {
       const reward = rewards.find((item) => item.id === button.dataset.editReward);
-      close();
-      openRewardEditorSheet({ app, viewState, reward, reopenManager: true });
+      openNextSheetAfterClose(close, () => {
+        openRewardEditorSheet({ app, viewState, reward, reopenManager: true });
+      });
     });
   });
 
@@ -556,7 +571,6 @@ function openRewardManagerSheet({ app, viewState }) {
         return;
       }
       showToast(changed.active ? `已启用 ${changed.title}` : `已停用 ${changed.title}`);
-      close();
       await rerenderWithState(app, viewState);
       openRewardManagerSheet({ app, viewState });
     });
@@ -677,7 +691,13 @@ function openRewardEditorSheet({ app, viewState, reward = null, reopenManager = 
       close();
       showToast(`${reward ? '已更新' : '已新增'}奖励：${saved.title}`);
       await rerenderWithState(app, viewState);
-      if (reopenManager) openRewardManagerSheet({ app, viewState });
+      if (reopenManager) {
+        setTimeout(() => {
+          openRewardManagerSheet({ app, viewState });
+        }, SHEET_CLOSE_DELAY_MS);
+        return;
+      }
+      close();
     } catch {
       showToast('奖励保存失败，请检查名称和价格');
     }
