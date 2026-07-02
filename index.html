@@ -37,7 +37,12 @@
   <script type="module">
     Promise.resolve(window.__taskboxGistPatchReady)
       .catch(() => {})
-      .then(() => import('./js/app.js'));
+      .then(() => import('./js/app.js'))
+      .then(() => {
+        if (document.readyState !== 'loading') {
+          window.dispatchEvent(new Event('DOMContentLoaded'));
+        }
+      });
   </script>
 </body>
 </html>
