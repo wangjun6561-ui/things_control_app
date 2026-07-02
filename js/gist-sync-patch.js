@@ -80,20 +80,29 @@
     return oldFetch(input, init);
   };
 
-  window.__taskboxGistPatchReady = (async () => {
+  async function primeFromGist() {
     const local = readData();
     if (hasLocalTaskboxData(local)) {
       writeData(withGistSettings(local));
       return;
     }
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2200);
     try {
-      const response = await oldFetch(TASKBOX_RAW_URL, { cache: 'no-store' });
+      const response = await oldFetch(TASKBOX_RAW_URL, { cache: 'no-store', signal: controller.signal });
       if (!response.ok) return;
       const remote = await response.json();
       writeData(withGistSettings(remote));
     } catch {
-      // The app can still seed local data if the first remote read fails.
+      // Do not block app boot if the first remote read is slow or unavailable.
+    } finally {
+      clearTimeout(timer);
     }
-  })();
+  }
+
+  window.__taskboxGistPatchReady = Promise.race([
+    primeFromGist(),
+    new Promise((resolve) => setTimeout(resolve, 2500)),
+  ]);
 })();
