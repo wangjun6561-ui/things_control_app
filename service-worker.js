@@ -1,9 +1,10 @@
-const CACHE_NAME = 'taskbox-v4';
+const CACHE_NAME = 'taskbox-v5-gist-patch';
 const CACHE_FILES = [
   './',
   './index.html',
   './css/style.css',
   './js/app.js',
+  './js/gist-sync-patch.js',
   './js/points-page.js',
   './js/points-store.js',
   './js/points-ai.js',
