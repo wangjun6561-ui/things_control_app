@@ -35,8 +35,9 @@
 
   <script src="js/gist-sync-patch.js"></script>
   <script type="module">
-    await window.__taskboxGistPatchReady;
-    await import('./js/app.js');
+    Promise.resolve(window.__taskboxGistPatchReady)
+      .catch(() => {})
+      .then(() => import('./js/app.js'));
   </script>
 </body>
 </html>
