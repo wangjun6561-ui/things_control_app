@@ -33,8 +33,8 @@
       cloudEnabled: true,
       cloudProvider: 'gist',
       cloudEndpoint: TASKBOX_RAW_URL,
-      cloudToken: token,
-      githubToken: settings.githubToken || '',
+      cloudToken: '',
+      githubToken: settings.githubToken || token,
     };
     next.meta = { ...(next.meta || {}), updatedAt: next.meta?.updatedAt || new Date().toISOString() };
     return next;
@@ -50,6 +50,12 @@
       && String(url || '').includes(GIST_FILE);
   }
 
+  function isTaskboxGistRead(url, method) {
+    return method === 'GET'
+      && String(url || '').includes(`/${GIST_ID}/raw/`)
+      && String(url || '').includes(GIST_FILE);
+  }
+
   function getWriteToken() {
     const data = readData();
     return cleanToken(data?.settings?.githubToken || data?.settings?.cloudToken || '');
@@ -58,6 +64,10 @@
   window.fetch = async (input, init = {}) => {
     const url = typeof input === 'string' ? input : input?.url;
     const method = String(init?.method || input?.method || 'GET').toUpperCase();
+
+    if (isTaskboxGistRead(url, method)) {
+      return oldFetch(TASKBOX_RAW_URL, { cache: init.cache || 'no-store' });
+    }
 
     if (isTaskboxGistWrite(url, method)) {
       const token = getWriteToken();
