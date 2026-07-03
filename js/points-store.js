@@ -1,5 +1,8 @@
 export const POINTS_CACHE_KEY = 'taskbox_points_cache';
-export const DEFAULT_POINTS_URL = 'https://gist.githubusercontent.com/wangjun6561-ui/90218455bf94dbce57dedabb07fa386a/raw/3c3bee39eb4995cabc5c58312ee5c30aa9598c08/mock-points.json';
+const DATA_REPO_OWNER = 'liangzai4322';
+const DATA_REPO_NAME = 'things-control-data';
+const DATA_REPO_BRANCH = 'main';
+export const DEFAULT_POINTS_URL = `https://raw.githubusercontent.com/${DATA_REPO_OWNER}/${DATA_REPO_NAME}/${DATA_REPO_BRANCH}/mock-points.json`;
 
 const TASKBOX_STORAGE_KEY = 'taskbox_data';
 const LOCAL_POINTS_FALLBACK_URL = 'mock-points.json';
@@ -208,6 +211,10 @@ async function fetchSource(url) {
   if (gist) {
     return fetchLatestGistSource(gist, url, String(settings.githubToken || '').trim());
   }
+  const github = parseGitHubRawUrl(url);
+  if (github) {
+    return fetchGitHubRawSource(github, url);
+  }
 
   const response = await fetch(url, { cache: 'no-store' });
   if (!response.ok) throw new Error('points_fetch_failed');
@@ -223,6 +230,46 @@ function parseGistRawUrl(url) {
   const match = String(url || '').match(/gist\.githubusercontent\.com\/[^/]+\/([a-f0-9]+)\/raw\/[^/]+\/(.+)$/i);
   if (!match) return null;
   return { gistId: match[1], filename: decodeURIComponent(match[2]) };
+}
+
+function parseGitHubRawUrl(url) {
+  const match = String(url || '').match(/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/i);
+  if (!match) return null;
+  return {
+    owner: match[1],
+    repo: match[2],
+    branch: match[3],
+    path: decodeURIComponent(match[4]),
+  };
+}
+
+function encodeRepoPath(path) {
+  return String(path || '').split('/').map((part) => encodeURIComponent(part)).join('/');
+}
+
+function getStableGitHubRawUrl(parsed) {
+  return `https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/${parsed.branch}/${encodeRepoPath(parsed.path)}`;
+}
+
+function toBase64Utf8(text) {
+  const bytes = new TextEncoder().encode(text);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function fetchGitHubRawSource(parsed, url) {
+  const response = await fetch(getStableGitHubRawUrl(parsed), { cache: 'no-store' });
+  if (!response.ok) throw new Error('points_github_raw_fetch_failed');
+  const payload = await response.json();
+  const normalized = normalizePointsData(payload);
+  normalized.meta.sourceUrl = url;
+  normalized.meta.lastLoadedAt = nowIso();
+  normalized.meta.dirty = false;
+  return normalized;
 }
 
 async function fetchLatestGistSource(parsed, url, token = '') {
@@ -274,11 +321,13 @@ export function getPointsSyncState() {
   const sourceUrl = getPointsSourceUrl();
   const hasToken = Boolean(String(settings.githubToken || '').trim());
   const isGistSource = Boolean(parseGistRawUrl(sourceUrl));
+  const isGitHubSource = Boolean(parseGitHubRawUrl(sourceUrl));
   return {
     sourceUrl,
     hasToken,
     isGistSource,
-    autoPushEnabled: Boolean(isGistSource && hasToken),
+    isGitHubSource,
+    autoPushEnabled: Boolean((isGistSource || isGitHubSource) && hasToken),
   };
 }
 
@@ -293,6 +342,7 @@ export async function pushPointsToCloud(options = {}) {
   const sourceUrl = getPointsSourceUrl();
   const token = String(settings.githubToken || '').trim();
   const parsed = parseGistRawUrl(sourceUrl);
+  const parsedGitHub = parseGitHubRawUrl(sourceUrl);
   const syncedPayload = normalizePointsData({
     ...pointsData,
     meta: {
@@ -303,25 +353,55 @@ export async function pushPointsToCloud(options = {}) {
     },
   });
 
-  if (!parsed || !token) return false;
+  if ((!parsed && !parsedGitHub) || !token) return false;
   if (!force && !pointsData.meta.dirty) return false;
 
-  const response = await fetch(`https://api.github.com/gists/${parsed.gistId}`, {
-    method: 'PATCH',
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      files: {
-        [parsed.filename]: {
-          content: JSON.stringify(syncedPayload, null, 2),
-        },
+  if (parsedGitHub) {
+    const apiPath = encodeRepoPath(parsedGitHub.path);
+    const apiBase = `https://api.github.com/repos/${parsedGitHub.owner}/${parsedGitHub.repo}/contents/${apiPath}`;
+    const currentResponse = await fetch(`${apiBase}?ref=${encodeURIComponent(parsedGitHub.branch)}`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
       },
-    }),
-  });
-  if (!response.ok) throw new Error('points_gist_patch_failed');
+      cache: 'no-store',
+    });
+    if (!currentResponse.ok) throw new Error('points_github_file_fetch_failed');
+    const current = await currentResponse.json();
+    const response = await fetch(apiBase, {
+      method: 'PUT',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: `Update ${parsedGitHub.path}`,
+        content: toBase64Utf8(`${JSON.stringify(syncedPayload, null, 2)}\n`),
+        sha: current.sha,
+        branch: parsedGitHub.branch,
+      }),
+    });
+    if (!response.ok) throw new Error('points_github_file_update_failed');
+  } else {
+    const response = await fetch(`https://api.github.com/gists/${parsed.gistId}`, {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        files: {
+          [parsed.filename]: {
+            content: JSON.stringify(syncedPayload, null, 2),
+          },
+        },
+      }),
+    });
+    if (!response.ok) throw new Error('points_gist_patch_failed');
+  }
   const saved = writeCache(syncedPayload, { dirty: false });
   if (!silent) showPointsSyncToast('☁️已更新');
   return saved;
