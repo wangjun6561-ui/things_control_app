@@ -1,10 +1,10 @@
-const CACHE_NAME = 'taskbox-v9-gist-auth-guard';
+const CACHE_NAME = 'taskbox-v11-github-repo-sync';
 const CACHE_FILES = [
   './',
   './index.html',
   './css/style.css',
   './js/app.js',
-  './js/gist-sync-patch.js?v=3',
+  './js/gist-sync-patch.js?v=4',
   './js/points-page.js',
   './js/points-store.js',
   './js/points-ai.js',
@@ -17,7 +17,8 @@ const CACHE_FILES = [
   './js/small-world.js',
   './manifest.json',
   './mock-points.json',
-  './data/mock-points.json'
+  './data/mock-points.json',
+  './sw-v10.js'
 ];
 
 self.addEventListener('install', (e) => {
