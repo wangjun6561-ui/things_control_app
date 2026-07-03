@@ -162,7 +162,7 @@ function registerServiceWorker() {
     window.location.reload();
   });
 
-  navigator.serviceWorker.register('sw-v9.js')
+  navigator.serviceWorker.register('sw-v10.js')
     .then((registration) => registration.update().catch(() => {}))
     .catch(() => {});
 }
