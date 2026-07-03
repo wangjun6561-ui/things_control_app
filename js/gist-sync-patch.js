@@ -1,12 +1,26 @@
 (() => {
   const STORAGE_KEY = 'taskbox_data';
-  const BAD_TOKEN_KEY = 'taskbox_gist_bad_token';
-  const GIST_ID = '90218455bf94dbce57dedabb07fa386a';
-  const GIST_FILE = 'taskbox-backup.json';
-  const POINTS_FILE = 'mock-points.json';
-  const TASKBOX_RAW_URL = `https://gist.githubusercontent.com/wangjun6561-ui/${GIST_ID}/raw/${GIST_FILE}`;
-  const POINTS_RAW_URL = `https://gist.githubusercontent.com/wangjun6561-ui/${GIST_ID}/raw/${POINTS_FILE}`;
-  const GIST_API_URL = `https://api.github.com/gists/${GIST_ID}`;
+  const BAD_TOKEN_KEY = 'taskbox_github_bad_token';
+  const DATA_OWNER = 'liangzai4322';
+  const DATA_REPO = 'things-control-data';
+  const DATA_BRANCH = 'main';
+  const DATA_RAW_BASE = `https://raw.githubusercontent.com/${DATA_OWNER}/${DATA_REPO}/${DATA_BRANCH}`;
+  const FILES = {
+    taskbox: 'taskbox-backup.json',
+    points: 'mock-points.json',
+    pavilion: 'pavilion.json',
+    tower: 'tower.json',
+  };
+  const RAW_URLS = {
+    [FILES.taskbox]: `${DATA_RAW_BASE}/${FILES.taskbox}`,
+    [FILES.points]: `${DATA_RAW_BASE}/${FILES.points}`,
+    [FILES.pavilion]: `${DATA_RAW_BASE}/${FILES.pavilion}`,
+    [FILES.tower]: `${DATA_RAW_BASE}/${FILES.tower}`,
+  };
+  const LEGACY_GIST_IDS = new Set([
+    '90218455bf94dbce57dedabb07fa386a',
+    '6a56c7352da690f8aeca47262361243b',
+  ]);
   const oldFetch = window.fetch.bind(window);
 
   function readData() {
@@ -65,18 +79,42 @@
   }
 
   function showAuthFailedToast() {
-    window.TaskBoxApp?.showToast?.('GitHub Token 无效或缺少 gist 权限，已本地保存，暂停云端写回');
+    window.TaskBoxApp?.showToast?.('GitHub Token 无效或缺少 repo 权限，已本地保存，暂停云端写回');
   }
 
-  function withGistSettings(data) {
+  function filenameFromUrl(url = '') {
+    const decoded = decodeURIComponent(String(url));
+    return Object.values(FILES).find((filename) => decoded.includes(`/${filename}`) || decoded.endsWith(filename)) || '';
+  }
+
+  function legacyGistIdFromUrl(url = '') {
+    const match = String(url).match(/(?:gist\.githubusercontent\.com\/[^/]+\/|api\.github\.com\/gists\/)([a-f0-9]+)/i);
+    return match ? match[1] : '';
+  }
+
+  function isLegacyGistUrl(url = '') {
+    const gistId = legacyGistIdFromUrl(url);
+    return Boolean(gistId && LEGACY_GIST_IDS.has(gistId));
+  }
+
+  function normalizeUrl(value, filename) {
+    const url = String(value || '').trim();
+    if (!url || isLegacyGistUrl(url)) return RAW_URLS[filename];
+    return url;
+  }
+
+  function withGitHubDataSettings(data) {
     const next = data && typeof data === 'object' ? { ...data } : {};
     const settings = { ...(next.settings || {}) };
     const token = cleanToken(settings.githubToken || settings.cloudToken || '');
     next.settings = {
       ...settings,
       cloudEnabled: true,
-      cloudProvider: 'gist',
-      cloudEndpoint: TASKBOX_RAW_URL,
+      cloudProvider: 'github',
+      cloudEndpoint: normalizeUrl(settings.cloudEndpoint, FILES.taskbox),
+      pointsDataUrl: normalizeUrl(settings.pointsDataUrl, FILES.points),
+      pavilionDataUrl: normalizeUrl(settings.pavilionDataUrl, FILES.pavilion),
+      towerDataUrl: normalizeUrl(settings.towerDataUrl, FILES.tower),
       cloudToken: '',
       githubToken: settings.githubToken || token,
     };
@@ -88,116 +126,126 @@
     return Boolean(data && (Array.isArray(data.boxes) || Array.isArray(data.tasks)));
   }
 
-  function isTaskboxGistWrite(url, method) {
-    return method === 'PUT'
-      && String(url || '').includes(`/${GIST_ID}/raw/`)
-      && String(url || '').includes(GIST_FILE);
+  function toBase64Utf8(text) {
+    const bytes = new TextEncoder().encode(text);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
   }
 
-  function isManagedGistRawRead(url, method) {
-    return method === 'GET'
-      && String(url || '').includes(`/${GIST_ID}/raw/`)
-      && [GIST_FILE, POINTS_FILE].some((filename) => String(url || '').includes(filename));
-  }
+  async function updateRepoFile(filename, content, token) {
+    const clean = cleanToken(token);
+    if (!clean || isTokenBlocked(clean)) {
+      if (clean) showAuthFailedToast();
+      return new Response(JSON.stringify({ message: 'github_auth_blocked' }), { status: 401 });
+    }
 
-  function isManagedGistApi(url) {
-    return String(url || '').replace(/\/$/, '') === GIST_API_URL;
-  }
-
-  function getManagedRawUrl(url) {
-    return String(url || '').includes(POINTS_FILE) ? POINTS_RAW_URL : TASKBOX_RAW_URL;
-  }
-
-  async function buildGistApiPayload() {
-    const [taskbox, points] = await Promise.all([
-      oldFetch(TASKBOX_RAW_URL, { cache: 'no-store' }).then((response) => response.ok ? response.text() : ''),
-      oldFetch(POINTS_RAW_URL, { cache: 'no-store' }).then((response) => response.ok ? response.text() : ''),
-    ]);
-    return new Response(JSON.stringify({
-      files: {
-        [GIST_FILE]: { content: taskbox, raw_url: TASKBOX_RAW_URL },
-        [POINTS_FILE]: { content: points, raw_url: POINTS_RAW_URL },
+    const apiBase = `https://api.github.com/repos/${DATA_OWNER}/${DATA_REPO}/contents/${encodeURIComponent(filename)}`;
+    const currentResponse = await oldFetch(`${apiBase}?ref=${encodeURIComponent(DATA_BRANCH)}`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${clean}`,
       },
+      cache: 'no-store',
+    });
+    if (currentResponse.status === 401 || currentResponse.status === 403) {
+      rememberBadToken(clean, currentResponse.status);
+      showAuthFailedToast();
+      return currentResponse;
+    }
+    if (!currentResponse.ok) return currentResponse;
+    const current = await currentResponse.json();
+
+    const updateResponse = await oldFetch(apiBase, {
+      method: 'PUT',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${clean}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: `Update ${filename}`,
+        content: toBase64Utf8(`${content.replace(/\s*$/, '')}\n`),
+        sha: current.sha,
+        branch: DATA_BRANCH,
+      }),
+    });
+    if (updateResponse.status === 401 || updateResponse.status === 403) {
+      rememberBadToken(clean, updateResponse.status);
+      showAuthFailedToast();
+    }
+    return updateResponse;
+  }
+
+  async function buildLegacyGistPayload() {
+    const [taskbox, points, pavilion, tower] = await Promise.all(
+      Object.values(FILES).map((filename) => oldFetch(RAW_URLS[filename], { cache: 'no-store' })
+        .then((response) => response.ok ? response.text() : ''))
+    );
+    const contentByFile = {
+      [FILES.taskbox]: taskbox,
+      [FILES.points]: points,
+      [FILES.pavilion]: pavilion,
+      [FILES.tower]: tower,
+    };
+    return new Response(JSON.stringify({
+      files: Object.fromEntries(Object.values(FILES).map((filename) => [
+        filename,
+        { content: contentByFile[filename], raw_url: RAW_URLS[filename] },
+      ])),
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  function getWriteToken() {
-    const data = readData();
-    return cleanToken(data?.settings?.githubToken || data?.settings?.cloudToken || '');
-  }
-
   window.fetch = async (input, init = {}) => {
     const url = typeof input === 'string' ? input : input?.url;
     const method = String(init?.method || input?.method || 'GET').toUpperCase();
+    const filename = filenameFromUrl(url);
 
-    if (isManagedGistRawRead(url, method)) {
-      return oldFetch(getManagedRawUrl(url), { cache: init.cache || 'no-store' });
+    if (method === 'GET' && filename && isLegacyGistUrl(url)) {
+      return oldFetch(RAW_URLS[filename], { cache: init.cache || 'no-store' });
     }
 
-    if (isManagedGistApi(url) && method === 'GET') {
-      return buildGistApiPayload();
+    if (method === 'GET' && String(url || '').includes('api.github.com/gists/') && isLegacyGistUrl(url)) {
+      return buildLegacyGistPayload();
     }
 
-    if (isManagedGistApi(url) && method === 'PATCH') {
-      const token = getBearerToken(init.headers);
-      if (!token || isTokenBlocked(token)) {
-        if (token) showAuthFailedToast();
-        return new Response(JSON.stringify({ message: 'gist_auth_blocked' }), { status: 401 });
-      }
-      const response = await oldFetch(input, init);
-      if (response.status === 401 || response.status === 403) {
-        rememberBadToken(token, response.status);
-        showAuthFailedToast();
-      }
-      return response;
-    }
-
-    if (isTaskboxGistWrite(url, method)) {
-      const token = getWriteToken();
-      if (!token) throw new Error('gist_token_missing');
-      if (isTokenBlocked(token)) {
-        showAuthFailedToast();
-        throw new Error('gist_auth_blocked');
-      }
+    if ((method === 'PATCH' || method === 'PUT') && filename && isLegacyGistUrl(url)) {
+      const token = getBearerToken(init.headers) || cleanToken(readData()?.settings?.githubToken || '');
       const rawBody = typeof init.body === 'string' ? init.body : JSON.stringify(init.body || {});
-      const content = JSON.stringify(JSON.parse(rawBody), null, 2);
-      const response = await oldFetch(GIST_API_URL, {
-        method: 'PATCH',
-        headers: {
-          Accept: 'application/vnd.github+json',
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ files: { [GIST_FILE]: { content } } }),
-      });
-      if (response.status === 401 || response.status === 403) {
-        rememberBadToken(token, response.status);
-        showAuthFailedToast();
+      let content = rawBody;
+      try {
+        const parsed = JSON.parse(rawBody);
+        content = parsed.files?.[filename]?.content || JSON.stringify(parsed, null, 2);
+      } catch {
+        // Keep the original body for raw PUT compatibility.
       }
-      if (!response.ok) throw new Error('gist_patch_failed');
-      return response;
+      return updateRepoFile(filename, content, token);
     }
 
     return oldFetch(input, init);
   };
 
-  async function primeFromGist() {
+  async function primeFromGitHubDataRepo() {
     const local = readData();
     if (hasLocalTaskboxData(local)) {
-      writeData(withGistSettings(local));
+      writeData(withGitHubDataSettings(local));
       return;
     }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 2200);
     try {
-      const response = await oldFetch(TASKBOX_RAW_URL, { cache: 'no-store', signal: controller.signal });
+      const response = await oldFetch(RAW_URLS[FILES.taskbox], { cache: 'no-store', signal: controller.signal });
       if (!response.ok) return;
       const remote = await response.json();
-      writeData(withGistSettings(remote));
+      writeData(withGitHubDataSettings(remote));
     } catch {
       // Do not block app boot if the first remote read is slow or unavailable.
     } finally {
@@ -206,7 +254,7 @@
   }
 
   window.__taskboxGistPatchReady = Promise.race([
-    primeFromGist(),
+    primeFromGitHubDataRepo(),
     new Promise((resolve) => setTimeout(resolve, 2500)),
   ]);
 })();
