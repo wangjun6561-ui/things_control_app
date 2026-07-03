@@ -93,12 +93,29 @@ export function renderSettings(app) {
           </label>
         </div>
 
-        <label>云端接口 URL（支持 GET/PUT；JSONBin 可直接填 /v3/b/BinID）
-          <input id="cloudEndpoint" class="input" value="${escapeHtml(settings.cloudEndpoint || '')}" placeholder="./cloud-sync.json 或 https://example.com/taskbox.json">
+        <label>云端类型
+          <select id="cloudProvider" class="input">
+            <option value="github" ${settings.cloudProvider !== 'json' && settings.cloudProvider !== 'gist' ? 'selected' : ''}>GitHub 数据仓库</option>
+            <option value="gist" ${settings.cloudProvider === 'gist' ? 'selected' : ''}>GitHub Gist（旧版兼容）</option>
+            <option value="json" ${settings.cloudProvider === 'json' ? 'selected' : ''}>通用 JSON / JSONBin</option>
+          </select>
         </label>
-        <label>访问令牌（可选）
-          <input id="cloudToken" class="input" type="password" value="${escapeHtml(settings.cloudToken || '')}" placeholder="Bearer Token">
-        </label>
+
+        <div class="cloud-config-block">
+          <div>
+            <strong>盒子数据源</strong>
+            <p class="panel-note">当前默认从 GitHub 数据仓库读取盒子核心数据；写回需要在本机填写具备 repo 权限的 GitHub Token。</p>
+          </div>
+          <label>盒子 Raw URL
+            <input id="cloudEndpoint" class="input" value="${escapeHtml(settings.cloudEndpoint || '')}" placeholder="https://raw.githubusercontent.com/.../taskbox-backup.json">
+          </label>
+          <label>GitHub Token（只保存在本机，用于写回 GitHub 数据仓库）
+            <input id="githubToken" class="input" type="password" value="${escapeHtml(settings.githubToken || '')}" placeholder="ghp_xxx">
+          </label>
+          <label>通用 JSON 访问令牌（JSONBin 等兜底源才需要）
+            <input id="cloudToken" class="input" type="password" value="${escapeHtml(settings.cloudToken || '')}" placeholder="Bearer Token / X-Master-Key">
+          </label>
+        </div>
 
         <div class="action-grid">
           <button class="btn" id="pullCloudBtn">从云端拉取</button>
@@ -114,14 +131,14 @@ export function renderSettings(app) {
           </div>
           <p class="panel-note">${escapeHtml(
             pointsSyncState.autoPushEnabled
-              ? '当前默认读取你配置的 Gist Raw 链接，本地改动会自动同步。'
-              : pointsSyncState.isGistSource
-                ? '当前默认读取你配置的 Gist Raw 链接；要自动同步，请先填写 GitHub Token。'
+                ? '当前默认读取你配置的 GitHub Raw 链接，本地改动会自动同步。'
+              : (pointsSyncState.isGistSource || pointsSyncState.isGitHubSource)
+                ? '当前默认读取你配置的 GitHub Raw 链接；要自动同步，请先填写 GitHub Token。'
                 : '当前可以在这里配置积分账本的远端 JSON 地址。'
           )}</p>
         </div>
         <label>积分 JSON URL（可留空）
-          <input id="pointsDataUrl" class="input" value="${escapeHtml(settings.pointsDataUrl || '')}" placeholder="https://gist.githubusercontent.com/.../mock-points.json">
+          <input id="pointsDataUrl" class="input" value="${escapeHtml(settings.pointsDataUrl || '')}" placeholder="https://raw.githubusercontent.com/.../mock-points.json">
         </label>
         <div class="action-grid">
           <button class="btn" id="pullPointsBtn">拉取云端账本</button>
@@ -174,11 +191,18 @@ export function renderSettings(app) {
   app.querySelector('#cloudEnabled').addEventListener('change', (event) => {
     setSettings({ cloudEnabled: event.target.checked });
   });
+  app.querySelector('#cloudProvider').addEventListener('change', (event) => {
+    setSettings({ cloudProvider: event.target.value });
+    renderSettings(app);
+  });
   app.querySelector('#cloudEndpoint').addEventListener('input', (event) => {
     setSettings({ cloudEndpoint: event.target.value.trim() });
   });
   app.querySelector('#cloudToken').addEventListener('input', (event) => {
     setSettings({ cloudToken: event.target.value.trim() });
+  });
+  app.querySelector('#githubToken').addEventListener('input', (event) => {
+    setSettings({ githubToken: event.target.value.trim() });
   });
   app.querySelector('#pointsDataUrl').addEventListener('input', (event) => {
     setSettings({ pointsDataUrl: event.target.value.trim() });
@@ -197,8 +221,10 @@ export function renderSettings(app) {
   const syncCloudSettings = () => {
     setSettings({
       cloudEnabled: app.querySelector('#cloudEnabled').checked,
+      cloudProvider: app.querySelector('#cloudProvider').value,
       cloudEndpoint: app.querySelector('#cloudEndpoint').value.trim(),
       cloudToken: app.querySelector('#cloudToken').value.trim(),
+      githubToken: app.querySelector('#githubToken').value.trim(),
     });
   };
 
@@ -210,17 +236,17 @@ export function renderSettings(app) {
       else showToast('本地已是最新');
       navigate('#home');
     } catch {
-      showToast('云端拉取失败，请检查 URL 或 Token');
+      showToast('云端拉取失败，请检查 Raw 链接或网络');
     }
   });
 
   app.querySelector('#pushCloudBtn').addEventListener('click', async () => {
     syncCloudSettings();
     try {
-      await pushDataToCloud({ force: true });
-      showToast('已上传到云端');
+      const result = await pushDataToCloud({ force: true });
+      showToast(result ? '已上传到云端' : '缺少 GitHub Token，无法写回云端');
     } catch {
-      showToast('云端上传失败，请检查 URL 或 Token');
+      showToast('云端上传失败，请检查 GitHub Token 权限');
     }
   });
 
