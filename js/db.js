@@ -34,13 +34,27 @@ const DEFAULT_TASKS = [
 let cloudSyncTimer = null;
 const SOUND_CACHE = new Map();
 const BOX_COLOR_POOL = ['important', 'relax', 'reward', 'misc', 'punish', 'study', 'health'];
-const DEFAULT_PAVILION_URL = 'https://gist.githubusercontent.com/wangjun6561-ui/6a56c7352da690f8aeca47262361243b/raw/1f947c59ab7be5f873b92d66f71f3d941f7ea5e1/pavilion.json';
+const DATA_REPO_OWNER = 'liangzai4322';
+const DATA_REPO_NAME = 'things-control-data';
+const DATA_REPO_BRANCH = 'main';
+const DATA_REPO_RAW_BASE = `https://raw.githubusercontent.com/${DATA_REPO_OWNER}/${DATA_REPO_NAME}/${DATA_REPO_BRANCH}`;
+const DEFAULT_PAVILION_URL = `${DATA_REPO_RAW_BASE}/pavilion.json`;
 const LEGACY_TOWER_URL = 'https://gist.githubusercontent.com/wangjun6561-ui/6a56c7352da690f8aeca47262361243b/raw/1f947c59ab7be5f873b92d66f71f3d941f7ea5e1/tower.json';
-const DEFAULT_TOWER_URL = 'https://gist.githubusercontent.com/wangjun6561-ui/6a56c7352da690f8aeca47262361243b/raw/8cf924c148ac25cfc443c685e204d75b29da69e1/tower.json';
-const DEFAULT_POINTS_URL = 'https://gist.githubusercontent.com/wangjun6561-ui/90218455bf94dbce57dedabb07fa386a/raw/3c3bee39eb4995cabc5c58312ee5c30aa9598c08/mock-points.json';
+const DEFAULT_TOWER_URL = `${DATA_REPO_RAW_BASE}/tower.json`;
+const DEFAULT_POINTS_URL = `${DATA_REPO_RAW_BASE}/mock-points.json`;
+const DEFAULT_TASKBOX_URL = `${DATA_REPO_RAW_BASE}/taskbox-backup.json`;
+const DEFAULT_FLOMO_WEBHOOK = '';
 
 export function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeRemoteUrl(value, fallback, filename) {
+  const url = String(value || '').trim();
+  if (!url) return fallback;
+  const isLegacyGist = url.includes('gist.githubusercontent.com/wangjun6561-ui/');
+  const isExpectedFile = !filename || decodeURIComponent(url).endsWith(`/${filename}`);
+  return isLegacyGist && isExpectedFile ? fallback : url;
 }
 
 function normalize(data = {}) {
@@ -62,18 +76,19 @@ function normalize(data = {}) {
       updatedAt: t.updatedAt || t.createdAt || new Date().toISOString()
     })),
     settings: {
-      deepseekApiKey: data.settings?.deepseekApiKey || 'sk-ddabde5745eb401ea45777acf76b673c',
+      deepseekApiKey: data.settings?.deepseekApiKey || '',
       themeMode: data.settings?.themeMode || 'system',
       soundEnabled: data.settings?.soundEnabled ?? true,
-      cloudEnabled: data.settings?.cloudEnabled ?? false,
-      cloudEndpoint: data.settings?.cloudEndpoint || 'v3/b/69d3d1bb856a68218904f116',
-      cloudToken: data.settings?.cloudToken || '$2a$10$xCOfTmFVhdMLbv/wEL/UgeCFzBNO/He3sUcqV6OpwMJ.B/mmmxxaa',
-      pavilionDataUrl: data.settings?.pavilionDataUrl || DEFAULT_PAVILION_URL,
+      cloudProvider: ['json', 'gist', 'github'].includes(data.settings?.cloudProvider) ? data.settings.cloudProvider : 'github',
+      cloudEnabled: data.settings?.cloudEnabled ?? true,
+      cloudEndpoint: normalizeRemoteUrl(data.settings?.cloudEndpoint, DEFAULT_TASKBOX_URL, 'taskbox-backup.json'),
+      cloudToken: data.settings?.cloudToken || '',
+      pavilionDataUrl: normalizeRemoteUrl(data.settings?.pavilionDataUrl, DEFAULT_PAVILION_URL, 'pavilion.json'),
       towerDataUrl: !data.settings?.towerDataUrl || data.settings?.towerDataUrl === LEGACY_TOWER_URL
         ? DEFAULT_TOWER_URL
-        : data.settings.towerDataUrl,
-      pointsDataUrl: data.settings?.pointsDataUrl || DEFAULT_POINTS_URL,
-      flomoWebhook: data.settings?.flomoWebhook || '',
+        : normalizeRemoteUrl(data.settings.towerDataUrl, DEFAULT_TOWER_URL, 'tower.json'),
+      pointsDataUrl: normalizeRemoteUrl(data.settings?.pointsDataUrl, DEFAULT_POINTS_URL, 'mock-points.json'),
+      flomoWebhook: data.settings?.flomoWebhook || DEFAULT_FLOMO_WEBHOOK,
       githubToken: data.settings?.githubToken || '',
     },
     meta: {
@@ -109,7 +124,18 @@ function seed() {
   const initial = normalize({
     boxes,
     tasks,
-    settings: { deepseekApiKey: 'sk-ddabde5745eb401ea45777acf76b673c', themeMode: 'system', soundEnabled: true, cloudEnabled: true, cloudEndpoint: 'v3/b/69d3d1bb856a68218904f116', cloudToken: '$2a$10$xCOfTmFVhdMLbv/wEL/UgeCFzBNO/He3sUcqV6OpwMJ.B/mmmxxaa', pointsDataUrl: DEFAULT_POINTS_URL, flomoWebhook: '', githubToken: '' },
+    settings: {
+      deepseekApiKey: '',
+      themeMode: 'system',
+      soundEnabled: true,
+      cloudProvider: 'github',
+      cloudEnabled: true,
+      cloudEndpoint: DEFAULT_TASKBOX_URL,
+      cloudToken: '',
+      pointsDataUrl: DEFAULT_POINTS_URL,
+      flomoWebhook: DEFAULT_FLOMO_WEBHOOK,
+      githubToken: ''
+    },
     meta: { updatedAt: now, lastDailyReset: '', lastSummaryExportAt: null },
   });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
@@ -485,13 +511,172 @@ function buildCloudHeaders(endpoint, token, includeJson = true) {
   return headers;
 }
 
+function parseGistRawUrl(url) {
+  const match = String(url || '').match(/gist\.githubusercontent\.com\/([^/]+)\/([a-f0-9]+)\/raw(?:\/[a-f0-9]+)?\/(.+)$/i);
+  if (!match) return null;
+  return { owner: match[1], gistId: match[2], filename: decodeURIComponent(match[3]) };
+}
+
+function getStableGistRawUrl(parsed) {
+  return `https://gist.githubusercontent.com/${parsed.owner}/${parsed.gistId}/raw/${encodeURIComponent(parsed.filename)}`;
+}
+
+function parseGitHubRawUrl(url) {
+  const match = String(url || '').match(/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/i);
+  if (!match) return null;
+  return {
+    owner: match[1],
+    repo: match[2],
+    branch: match[3],
+    path: decodeURIComponent(match[4]),
+  };
+}
+
+function encodeRepoPath(path) {
+  return String(path || '').split('/').map((part) => encodeURIComponent(part)).join('/');
+}
+
+function getStableGitHubRawUrl(parsed) {
+  return `https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/${parsed.branch}/${encodeRepoPath(parsed.path)}`;
+}
+
+function toBase64Utf8(text) {
+  const bytes = new TextEncoder().encode(text);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function fetchGitHubRepoJson(parsed, rawUrl) {
+  const response = await fetch(getStableGitHubRawUrl(parsed) || rawUrl, { cache: 'no-store' });
+  if (!response.ok) throw new Error('github_raw_fetch_failed');
+  return response.json();
+}
+
+async function updateGitHubRepoJson(parsed, token, value) {
+  const cleanToken = normalizeToken(token);
+  if (!cleanToken) return false;
+
+  const apiPath = encodeRepoPath(parsed.path);
+  const apiBase = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/${apiPath}`;
+  const currentResponse = await fetch(`${apiBase}?ref=${encodeURIComponent(parsed.branch)}`, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${cleanToken}`,
+    },
+    cache: 'no-store',
+  });
+  if (!currentResponse.ok) throw new Error('github_file_fetch_failed');
+  const current = await currentResponse.json();
+
+  const updateResponse = await fetch(apiBase, {
+    method: 'PUT',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${cleanToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message: `Update ${parsed.path}`,
+      content: toBase64Utf8(`${JSON.stringify(value, null, 2)}\n`),
+      sha: current.sha,
+      branch: parsed.branch,
+    }),
+  });
+  if (!updateResponse.ok) throw new Error('github_file_update_failed');
+  return true;
+}
+
+async function fetchGistJson(parsed, rawUrl, token = '') {
+  const cleanToken = normalizeToken(token);
+  if (!cleanToken) {
+    const response = await fetch(getStableGistRawUrl(parsed) || rawUrl, { cache: 'no-store' });
+    if (!response.ok) throw new Error('gist_raw_fetch_failed');
+    return response.json();
+  }
+
+  try {
+    const response = await fetch(`https://api.github.com/gists/${parsed.gistId}`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${cleanToken}`,
+      },
+      cache: 'no-store',
+    });
+    if (!response.ok) throw new Error('gist_fetch_failed');
+    const payload = await response.json();
+    const file = payload?.files?.[parsed.filename];
+    if (!file) throw new Error('gist_file_missing');
+    const content = file.content || (file.raw_url ? await fetch(file.raw_url, { cache: 'no-store' }).then((res) => res.text()) : '');
+    if (!content) throw new Error('gist_file_empty');
+    return JSON.parse(content);
+  } catch (error) {
+    const response = await fetch(getStableGistRawUrl(parsed) || rawUrl, { cache: 'no-store' });
+    if (!response.ok) throw error;
+    return response.json();
+  }
+}
+
+async function updateGistJson(parsed, token, value) {
+  const cleanToken = normalizeToken(token);
+  if (!cleanToken) return false;
+
+  const response = await fetch(`https://api.github.com/gists/${parsed.gistId}`, {
+    method: 'PATCH',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${cleanToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      files: {
+        [parsed.filename]: {
+          content: JSON.stringify(value, null, 2),
+        },
+      },
+    }),
+  });
+  if (!response.ok) throw new Error('gist_patch_failed');
+  return true;
+}
+
+const LOCAL_ONLY_SETTING_KEYS = [
+  'deepseekApiKey',
+  'cloudToken',
+  'githubToken',
+];
+
+function preserveLocalOnlySettings(nextSettings = {}, localSettings = {}) {
+  const preserved = { ...nextSettings };
+  LOCAL_ONLY_SETTING_KEYS.forEach((key) => {
+    if (localSettings[key]) preserved[key] = localSettings[key];
+  });
+  return preserved;
+}
+
 export async function pushDataToCloud(options = {}) {
   const { force = false } = options;
   const data = getData();
-  const { cloudEnabled, cloudEndpoint, cloudToken } = data.settings;
+  const { cloudEnabled, cloudEndpoint, cloudToken, githubToken } = data.settings;
+
   const endpoint = resolveCloudEndpoint(cloudEndpoint, { forRead: false });
   if (!endpoint) return false;
   if (!force && !cloudEnabled) return false;
+
+  const parsedGist = parseGistRawUrl(endpoint);
+  if (parsedGist) {
+    return updateGistJson(parsedGist, githubToken || cloudToken, data);
+  }
+
+  const parsedGitHub = parseGitHubRawUrl(endpoint);
+  if (parsedGitHub) {
+    return updateGitHubRepoJson(parsedGitHub, githubToken || cloudToken, data);
+  }
 
   await fetch(endpoint, {
     method: 'PUT',
@@ -558,22 +743,31 @@ function mergeData(local, cloud) {
 export async function pullDataFromCloud(options = {}) {
   const { force = false } = options;
   const local = getData();
-  const { cloudEnabled, cloudEndpoint, cloudToken } = local.settings;
+  const { cloudEnabled, cloudEndpoint, cloudToken, githubToken } = local.settings;
+
   const endpoint = resolveCloudEndpoint(cloudEndpoint, { forRead: true });
   if (!endpoint) return false;
   if (!force && !cloudEnabled) return false;
 
-  const response = await fetch(endpoint, {
-    method: 'GET',
-    headers: buildCloudHeaders(endpoint, cloudToken, false),
-  });
-  if (!response.ok) throw new Error('cloud pull failed');
+  const parsedGist = parseGistRawUrl(endpoint);
+  const parsedGitHub = parseGitHubRawUrl(endpoint);
+  const payload = parsedGist
+    ? await fetchGistJson(parsedGist, endpoint, githubToken || cloudToken)
+    : parsedGitHub
+      ? await fetchGitHubRepoJson(parsedGitHub, endpoint)
+      : await (async () => {
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: buildCloudHeaders(endpoint, cloudToken, false),
+      });
+      if (!response.ok) throw new Error('cloud pull failed');
+      return response.json();
+    })();
 
-  const payload = await response.json();
   const cloudRaw = isJsonBinEndpoint(endpoint) ? (payload.record || {}) : payload;
   const cloudData = normalize(cloudRaw);
   const merged = mergeData(local, cloudData);
-  merged.settings = { ...merged.settings, deepseekApiKey: local.settings.deepseekApiKey };
+  merged.settings = preserveLocalOnlySettings(merged.settings, local.settings);
   saveData(merged, { skipCloud: true });
   return 'merged';
 }
